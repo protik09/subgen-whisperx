@@ -1,0 +1,4 @@
+whisperx
+ffmpeg-python
+tiktoken
+torch
