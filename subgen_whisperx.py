@@ -47,9 +47,7 @@ def get_device():
         else:
             print("CUDA is not accessible on your nVidia GPU.")
             print(
-                """Please refer to the CUDNN and CUBLAS installation guide at
-                https://developer.nvidia.com/cudnn and https://developer.nvidia.com/cublas. Using
-                CPU instead."""
+                "Please refer to the CUDNN and CUBLAS installation guide at https://developer.nvidia.com/cudnn and https://developer.nvidia.com/cublas. Using CPU instead."
             )
             return "cpu"
     else:
@@ -64,7 +62,6 @@ def get_device():
     except Exception as e:
         print(f"Warning: Error checking CUDA availability ({str(e)})")
         print("Falling back to CPU.")
-        return "cpu"
 
 
 def extract_audio(video_path: str = DEFAULT_INPUT_VIDEO) -> str:
@@ -87,7 +84,7 @@ def extract_audio(video_path: str = DEFAULT_INPUT_VIDEO) -> str:
     """
     stopwatch.start("Audio Extraction")
     extracted_audio_path: str = (
-        f"audio-{os.path.basename(video_path).replace('.mp4', '.mp3')}"
+        f"audio-{os.path.splitext(os.path.basename(video_path))[0]}.mp3"
     )
 
     # Add optimization flags to ffmpeg
@@ -152,7 +149,7 @@ def generate_subtitles(segments: Dict) -> str:
         srt_content.append(f"{segment_start} --> {segment_end}")
         srt_content.append(f"{text}{os.linesep}")
 
-    return srt_content
+    return "\n".join(srt_content)
 
 
 def post_process(subtitles: str) -> str:
@@ -164,16 +161,20 @@ def post_process(subtitles: str) -> str:
     - Removing leading/trailing whitespace
     - Normalizing line endings
     Args:
-        subtitles (str): The generated subtitles as a list of strings
+        subtitles (list): The generated subtitles as a list of strings
     Returns:
         str: The post-processed subtitles as a single string
     """
 
     # Clip lines that go over 150 characters taking into account word boundaries
-    subtitles_clean = [
-        line[:150].rsplit(" ", 1)[0] + os.linesep if len(line) > 150 else line
-        for line in subtitles
-    ]
+    subtitles_clean: str = ""
+    for line in subtitles:
+        if len(line) > 150:
+            line = line[:150].rsplit(" ", 1)[0]
+        else:
+            pass
+
+        subtitles_clean += line
 
     return subtitles_clean
 
@@ -210,7 +211,7 @@ def main():
 
     # The following should generate something like "input.ai.srt" from "input.mp4"
     subtitle_file_name = (
-        f"{os.path.basename(input_media_path.split('.')[0])}.ai-{language}.srt"
+        f"{os.path.basename(input_media_path.rsplit('.', 1)[0])}.ai-{language}.srt"
     )
 
     # Write subtitles to file
@@ -218,7 +219,7 @@ def main():
 
     try:
         with open(subtitle_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(subtitles))
+            f.write(subtitles)
             print(f"Subtitle file generated: {subtitle_file_name}")
     except Exception as e:
         print(f"An error occurred while writing the subtitle file: {e}")

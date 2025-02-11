@@ -74,5 +74,5 @@ class Timer:
         for name, timing in self.timings.items():
             duration: float = timing["duration"]
             total += duration
-            print(f"{name}: {format_time(duration).replace(',', '.')} s")
-        print(f"Total time: {format_time(total).replace(',', '.')} s")
+            print(f"{name}: {format_time(duration).replace(',', '.')}s")
+        print(f"Total time: {format_time(total).replace(',', '.')}s")
