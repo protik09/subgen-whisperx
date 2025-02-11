@@ -149,7 +149,7 @@ def generate_subtitles(segments: Dict) -> str:
         text = segment["text"].strip()
 
         # SRT format: [segment number] [start] --> [end] [text]
-        srt_content.append(f"{i}")
+        srt_content.append(f"{os.linesep}{i}")
         srt_content.append(f"{segment_start} --> {segment_end}")
         srt_content.append(f"{text}{os.linesep}")
 
@@ -169,13 +169,14 @@ def post_process(subtitles: str) -> str:
     Returns:
         str: The post-processed subtitles as a single string
     """
-    # Remove duplicate lines
-    subtitles = list(dict.fromkeys(subtitles))
 
-    # Clip lines that go over 150 characters
-    subtitles = [line[:150] for line in subtitles]
+    # Clip lines that go over 150 characters taking into account word boundaries
+    subtitles_clean = [
+        line[:150].rsplit(" ", 1)[0] + os.linesep if len(line) > 150 else line
+        for line in subtitles
+    ]
 
-    return subtitles
+    return subtitles_clean
 
 
 def main():
