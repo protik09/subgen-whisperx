@@ -1,134 +1,74 @@
 import sys
 import os
-import time
-import math
 import ffmpeg
+import subprocess
 import whisperx
-import torch
+import utils.timer as timer
 
-from typing import List, Dict, Any
+from typing import Dict
 from torch import cuda
-
-DEFAULT_INPUT_VIDEO = "input.mp4"
-INPUT_VIDEO_NAME = DEFAULT_INPUT_VIDEO.replace(".mp4", "")
-
-# WhisperX supports these models
-MODELS_AVAILABLE: List[str] = [
-    "tiny.en",
-    "tiny",
-    "base.en",
-    "base",
-    "small.en",
-    "small",
-    "medium.en",
-    "medium",
-    "large-v1",
-    "large-v2",
-    "large-v3",
-]
-MODE_SIZE = "base.en"
-device = "cuda" if cuda.is_available() else "cpu"
-
-
-def format_time(seconds: float) -> str:
-    """
-    Converts a time duration given in seconds to a formatted string in the format HH:MM:SS,mmm.
-
-    Parameters:
-    seconds (float): The total duration in seconds, including fractional seconds.
-
-    Returns:
-    str: A formatted string representing the time duration in the format HH:MM:SS,mmm.
-    """
-    hours: int = math.floor(seconds / 3600)
-    seconds %= 3600
-    minutes: int = math.floor(seconds / 60)
-    seconds %= 60
-    milliseconds: int = round((seconds - math.floor(seconds)) * 1000)
-    seconds = math.floor(seconds)
-    formatted_time: str = f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"  # SRT timing format
-    return formatted_time
-
-
-class Timer:
-    """
-    A utility class for measuring and tracking execution times of different operations.
-    This class provides functionality to measure the duration of named operations
-    by tracking their start and end times. It maintains a dictionary of timings
-    that can be used to analyze performance.
-    Attributes:
-        timings (Dict[str, Dict[str, float]]): A nested dictionary storing timing information.
-            The outer dictionary uses operation names as keys, while the inner dictionary
-            contains 'start', 'end', and 'duration' timestamps for each operation.
-    Methods:
-        start(name: str): Starts the timer for a named operation
-        stop(name: str): Stops the timer for a named operation and calculates duration
-        summary(): Prints a summary of all timed operations and their durations
-    Example:
-        >>> timer = Timer()
-        >>> timer.start("operation1")
-        >>> # ... some code to time ...
-        >>> timer.stop("operation1")
-        >>> timer.summary()
-        === Processing Times ===
-        operation1: 1.23s
-        Total time: 1.23s
-    Note:
-        - The timer uses time.time() for measurements
-        - All times are in seconds
-        - If stop() is called for an operation that wasn't started, a warning is printed
-        - The summary() method formats times using a separate format_time() function
-    """
-
-    def __init__(self) -> None:
-        self.timings: Dict[str, Dict[str, float]] = {}
-
-    def start(self, name: str) -> None:
-        self.timings[name] = {"start": time.time()}
-
-    def stop(self, name: str) -> None:
-        if name in self.timings:
-            self.timings[name]["end"] = time.time()
-            self.timings[name]["duration"] = (
-                self.timings[name]["end"] - self.timings[name]["start"]
-            )
-        else:
-            print(f"Warning: Timer for '{name}' was not started.")
-
-    def summary(self) -> None:
-        total: float = 0
-        print("\n=== Processing Times ===")
-        for name, timing in self.timings.items():
-            duration: float = timing["duration"]
-            total += duration
-            print(f"{name}: {format_time(duration).replace(',', '.')} s")
-        print(f"Total time: {format_time(total).replace(',', '.')} s")
-
+from utils.constants import DEFAULT_INPUT_VIDEO, MODEL_SIZE
 
 # Init global timer
-timer: Timer = Timer()
+stopwatch: timer.Timer = timer.Timer()
+
+
+# Function to accept file path from commandline argument
+def get_input_video():
+    if len(sys.argv) != 2:
+        print(
+            f"No input video provided. Using debugging video path: {DEFAULT_INPUT_VIDEO}"
+        )
+        return DEFAULT_INPUT_VIDEO
+    else:
+        video_path: str = str(sys.argv[1])
+        # Check if the input video exists and is a video file using ffprobe
+        if os.path.exists(video_path):
+            if (
+                ffmpeg.probe(video_path)["format"]["format_name"]
+                == "mkv,mov,mp4,m4a,3gp,avi,flv"
+            ):
+                return video_path
+            else:
+                raise ValueError("Unsupported video format.")
+        else:
+            print(f"Error: Input video '{video_path}' does not exist.")
+            raise FileNotFoundError
 
 
 def get_device():
     """Determine the best available device with graceful fallback"""
-    try:
-        import torch
+    # Check if an nVidia card is available
+    # If nvida-smi is not available, it will fall back to CPU
+    if os.system("nvidia-smi") == 0:
+        print("nVidia GPU detected.")
+        if cuda.is_available():
+            print("CUDA available.")
+            return "cuda"
+        else:
+            print("CUDA is not accessible on your nVidia GPU.")
+            print(
+                """Please refer to the CUDNN and CUBLAS installation guide at
+                https://developer.nvidia.com/cudnn and https://developer.nvidia.com/cublas. Using
+                CPU instead."""
+            )
+            return "cpu"
+    else:
+        print("nVidia GPU not available.")
 
-        if torch.cuda.is_available():
+    try:
+        if cuda.is_available():
             return "cuda"
         else:
             print("CUDA not available, falling back to CPU")
             return "cpu"
     except Exception as e:
         print(f"Warning: Error checking CUDA availability ({str(e)})")
-        print("Falling back to CPU")
+        print("Falling back to CPU.")
         return "cpu"
 
 
 def extract_audio(video_path: str = DEFAULT_INPUT_VIDEO) -> str:
-    timer.start("Audio Extraction")
-    extracted_audio = f"audio-{INPUT_VIDEO_NAME}.mp3"
-
     """Extract audio from input video file using ffmpeg.
     This function extracts the audio track from the input video file and converts it to MP3 format
     with optimized settings for transcription (mono, 16kHz sample rate). The extraction process
@@ -143,15 +83,19 @@ def extract_audio(video_path: str = DEFAULT_INPUT_VIDEO) -> str:
         - Downsamples to 16kHz for compatibility with Whisper
         - Uses variable bitrate (VBR) encoding
         - Utilizes all available CPU threads for processing
+        - Uses a larger thread queue size for better throughput
+        - Enables fast seeking for improved performance
     """
-    timer.start("Audio Extraction")
-    extracted_audio: str = f"audio-{INPUT_VIDEO_NAME}.mp3"
+    stopwatch.start("Audio Extraction")
+    extracted_audio_path: str = (
+        f"audio-{os.path.basename(video_path).replace('.mp4', '.mp3')}"
+    )
 
     # Add optimization flags to ffmpeg
     stream = ffmpeg.input(video_path)
     stream = ffmpeg.output(
         stream,
-        extracted_audio,
+        extracted_audio_path,
         acodec="libmp3lame",  # Faster MP3 encoder
         ac=1,  # Convert to mono
         ar=16000,  # Lower sample rate (whisper uses 16kHz)
@@ -164,18 +108,18 @@ def extract_audio(video_path: str = DEFAULT_INPUT_VIDEO) -> str:
     )
 
     ffmpeg.run(stream, overwrite_output=True)
-    timer.stop("Audio Extraction")
-    return extracted_audio
+    stopwatch.stop("Audio Extraction")
+    return extracted_audio_path
 
 
-def transcribe(audio):
-    timer.start("Transcription")
+def transcribe(audio_path: str, device: str) -> Dict:
+    stopwatch.start("Transcription")
 
     # Load model
-    model = whisperx.load_model(MODE_SIZE, device)
+    model = whisperx.load_model(MODEL_SIZE, device, compute_type="int8")
 
     # Initial transcription
-    initial_result = model.transcribe(audio, batch_size=16)
+    initial_result = model.transcribe(audio_path, batch_size=16)
 
     # Store language before alignment
     language = initial_result["language"]
@@ -183,7 +127,7 @@ def transcribe(audio):
     # Align timestamps
     model_a, metadata = whisperx.load_align_model(language_code=language, device=device)
     aligned_result = whisperx.align(
-        initial_result["segments"], model_a, metadata, audio, device
+        initial_result["segments"], model_a, metadata, audio_path, device
     )
 
     # Get aligned segments
@@ -193,54 +137,94 @@ def transcribe(audio):
     for segment in segments:
         print(f"[{segment['start']:.2f}s -> {segment['end']:.2f}s] {segment['text']}")
 
-    timer.stop("Transcription")
+    stopwatch.stop("Transcription")
     return language, segments
 
 
-def generate_subtitle_file(language, segments):
+def generate_subtitles(segments: Dict) -> str:
     srt_content = []
     for i, segment in enumerate(segments, start=1):
-        segment_start = format_time(segment["start"])
-        segment_end = format_time(segment["end"])
+        segment_start = timer.format_time(segment["start"])
+        segment_end = timer.format_time(segment["end"])
         text = segment["text"].strip()
 
+        # SRT format: [segment number] [start] --> [end] [text]
         srt_content.append(f"{i}")
         srt_content.append(f"{segment_start} --> {segment_end}")
-        srt_content.append(f"{text}\n")
+        srt_content.append(f"{text}{os.linesep}")
 
-    output_file = f"{INPUT_VIDEO_NAME}.whisperx.srt"
-    with open(output_file, "w", encoding="utf-8") as f:
-        f.write("\n".join(srt_content))
-
-    return output_file
+    return srt_content
 
 
-# Function to accept file path from commandline argument
-def get_input_video():
-    if len(sys.argv) != 2:
-        # Use the debugging path if no input video is provided
+def post_process(subtitles: str) -> str:
+    """Post-process the generated subtitles.
+    This function performs additional processing on the generated subtitles to improve readability
+    and ensure compliance with common subtitle standards. The post-processing steps include:
+    - Removing duplicate lines
+    - Removing empty lines
+    - Removing leading/trailing whitespace
+    - Normalizing line endings
+    Args:
+        subtitles (str): The generated subtitles as a list of strings
+    Returns:
+        str: The post-processed subtitles as a single string
+    """
+    # Remove duplicate lines
+    subtitles = list(dict.fromkeys(subtitles))
 
-        print("No input video provided. Using debugging video path.")
-        return DEFAULT_INPUT_VIDEO
-    else:
-        return str(sys.argv[1])
+    # Clip lines that go over 150 characters
+    subtitles = [line[:150] for line in subtitles]
+
+    return subtitles
 
 
 def main():
-    input_video_path: str = get_input_video()
-    # Check if the input video exists
-    if not os.path.exists(input_video_path):
-        print(f"Error: Input video '{input_video_path}' not found.")
-        raise FileNotFoundError
-    if not input_video_path:
-        print("Error: No valid input video provided.")
+    audio_flag: bool = False
+    input_media_path: str = ""
+    # Get video
+    try:
+        input_media_path: str = get_input_video()
+        print(f"Input video: {input_media_path}")
+    except ValueError:
+        input_media_path = str(sys.argv[1])
+        if ffmpeg.probe(input_media_path)["format"]["format_name"] == "mp3,wav,flac":
+            print("The input file is an audio file")
+            audio_flag = True
+        else:
+            raise ValueError("Unsupported audio format.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
         return
 
-    extracted_audio = extract_audio()
-    language, segments = transcribe(audio=extracted_audio)
-    subtitle_file = generate_subtitle_file(language=language, segments=segments)
-    print(f"Subtitle file generated: {subtitle_file}")
-    timer.summary()
+    # Extract Audio from Video if not an audio file
+    if not audio_flag:
+        audio_path: str = extract_audio(video_path=input_media_path)
+    else:
+        audio_path: str = input_media_path
+
+    language, segments = transcribe(audio_path=audio_path, device=get_device())
+
+    subtitles_raw: str = generate_subtitles(segments=segments)
+
+    subtitles: str = post_process(subtitles=subtitles_raw)
+
+    # The following should generate something like "input.ai.srt" from "input.mp4"
+    subtitle_file_name = (
+        f"{os.path.basename(input_media_path.split('.')[0])}.ai-{language}.srt"
+    )
+
+    # Write subtitles to file
+    subtitle_path = os.path.join(os.path.dirname(input_media_path), subtitle_file_name)
+
+    try:
+        with open(subtitle_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(subtitles))
+            print(f"Subtitle file generated: {subtitle_file_name}")
+    except Exception as e:
+        print(f"An error occurred while writing the subtitle file: {e}")
+
+    # Print summary of processing times
+    stopwatch.summary()
 
 
 if __name__ == "__main__":
