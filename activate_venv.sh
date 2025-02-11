@@ -40,4 +40,18 @@ else
         echo "Unsupported shell. Please use Bash or Zsh."
     fi
 fi
+if ! dpkg -l | grep -q nvidia-cuda-toolkit; then
+    echo "Installing NVIDIA CUDA Toolkit..."
+    sudo apt install nvidia-cuda-toolkit
+else
+    echo "NVIDIA CUDA Toolkit is already installed."
+fi
+
+
+if command -v nvcc > /dev/null; then
+    echo "NVIDIA CUDA Toolkit installation confirmed." > /dev/null
+else
+    echo "NVIDIA CUDA Toolkit installation failed. Please check the installation."
+    exit 1
+fi
 cd "$FOLDER" || exit

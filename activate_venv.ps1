@@ -24,7 +24,7 @@ if ($condaModule) {
     # Otherwise install the whisperx conda environment
     else {
         Write-Host "WhisperX conda environment not found. Creating...."
-        conda create -n whisperx python=3.10 -y pytorch==2.0.0 torchaudio==2.0.0 pytorch-cuda=11.8 -c pytorch -c nvidia whisperx
+        conda create -n whisperx python=3.10 -y pytorch==2.0.0 torchaudio==2.0.0 pytorch-cuda=11.8 -c pytorch -c nvidia whisperx gputil
 
         conda activate whisperx
         Write-Host "WhisperX conda environment created and activated."
