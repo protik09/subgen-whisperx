@@ -1,7 +1,6 @@
 import sys
 import os
 import ffmpeg
-import subprocess
 import whisperx
 import utils.timer as timer
 
