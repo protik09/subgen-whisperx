@@ -4,8 +4,6 @@ from typing import List
 
 DEFAULT_INPUT_VIDEO: str = os.path.join("assets", "input.mp4")
 
-MODEL_SIZE: str = "base.en"
-
 # WhisperX supports these models
 MODELS_AVAILABLE: List[str] = [
     "tiny.en",

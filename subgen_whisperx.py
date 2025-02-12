@@ -3,7 +3,9 @@ import os
 import ffmpeg
 import whisperx
 import utils.timer as timer
-
+import logging
+import coloredlogs
+from datetime import datetime
 from typing import Dict
 from torch import cuda
 from utils.constants import DEFAULT_INPUT_VIDEO, MODEL_SIZE
@@ -11,11 +13,20 @@ from utils.constants import DEFAULT_INPUT_VIDEO, MODEL_SIZE
 # Init global timer
 stopwatch: timer.Timer = timer.Timer()
 
+# Setup logging
+log_dir = "logs"
+os.makedirs(log_dir, exist_ok=True)
+log_filename = os.path.join(
+    log_dir, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_subgen.log"
+)
+logging.basicConfig(filename=log_filename, level=logging.DEBUG)
+coloredlogs.install(level="DEBUG")
+
 
 # Function to accept file path from commandline argument
 def get_input_video():
     if len(sys.argv) != 2:
-        print(
+        logging.info(
             f"No input video provided. Using debugging video path: {DEFAULT_INPUT_VIDEO}"
         )
         return DEFAULT_INPUT_VIDEO
@@ -31,7 +42,7 @@ def get_input_video():
             else:
                 raise ValueError("Unsupported video format.")
         else:
-            print(f"Error: Input video '{video_path}' does not exist.")
+            logging.error(f"Error: Input video '{video_path}' does not exist.")
             raise FileNotFoundError
 
 
@@ -40,28 +51,28 @@ def get_device():
     # Check if an nVidia card is available
     # If nvida-smi is not available, it will fall back to CPU
     if os.system("nvidia-smi") == 0:
-        print("nVidia GPU detected.")
+        logging.info("nVidia GPU detected.")
         if cuda.is_available():
-            print("CUDA available.")
+            logging.info("CUDA available.")
             return "cuda"
         else:
-            print("CUDA is not accessible on your nVidia GPU.")
-            print(
+            logging.warning("CUDA is not accessible on your nVidia GPU.")
+            logging.warning(
                 "Please refer to the CUDNN and CUBLAS installation guide at https://developer.nvidia.com/cudnn and https://developer.nvidia.com/cublas. Using CPU instead."
             )
             return "cpu"
     else:
-        print("nVidia GPU not available.")
+        logging.info("nVidia GPU not available.")
 
     try:
         if cuda.is_available():
             return "cuda"
         else:
-            print("CUDA not available, falling back to CPU")
+            logging.warning("CUDA not available, falling back to CPU")
             return "cpu"
     except Exception as e:
-        print(f"Warning: Error checking CUDA availability ({str(e)})")
-        print("Falling back to CPU.")
+        logging.error(f"Warning: Error checking CUDA availability ({str(e)})")
+        logging.warning("Falling back to CPU.")
 
 
 def extract_audio(video_path: str = DEFAULT_INPUT_VIDEO) -> str:
@@ -129,9 +140,11 @@ def transcribe(audio_path: str, device: str) -> Dict:
     # Get aligned segments
     segments = aligned_result["segments"]
 
-    print(f"Language: {language}")
+    logging.info(f"Language: {language}")
     for segment in segments:
-        print(f"[{segment['start']:.2f}s -> {segment['end']:.2f}s] {segment['text']}")
+        logging.debug(
+            f"[{segment['start']:.2f}s -> {segment['end']:.2f}s] {segment['text']}"
+        )
 
     stopwatch.stop("Transcription")
     return language, segments
@@ -185,16 +198,16 @@ def main():
     # Get video
     try:
         input_media_path: str = get_input_video()
-        print(f"Input video: {input_media_path}")
+        logging.info(f"Input video: {input_media_path}")
     except ValueError:
         input_media_path = str(sys.argv[1])
         if ffmpeg.probe(input_media_path)["format"]["format_name"] == "mp3,wav,flac":
-            print("The input file is an audio file")
+            logging.info("The input file is an audio file")
             audio_flag = True
         else:
             raise ValueError("Unsupported audio format.")
     except Exception as e:
-        print(f"An error occurred: {e}")
+        logging.error(f"An error occurred: {e}")
         return
 
     # Extract Audio from Video if not an audio file
@@ -220,9 +233,9 @@ def main():
     try:
         with open(subtitle_path, "w", encoding="utf-8") as f:
             f.write(subtitles)
-            print(f"Subtitle file generated: {subtitle_file_name}")
+            logging.info(f"Subtitle file generated: {subtitle_file_name}")
     except Exception as e:
-        print(f"An error occurred while writing the subtitle file: {e}")
+        logging.error(f"An error occurred while writing the subtitle file: {e}")
 
     # Print summary of processing times
     stopwatch.summary()

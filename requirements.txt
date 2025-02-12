@@ -2,3 +2,4 @@ whisperx
 ffmpeg-python
 tiktoken
 torch
+coloredlogs

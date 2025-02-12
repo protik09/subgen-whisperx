@@ -12,6 +12,7 @@ __pycache__/
 
 # Ignore log files
 *.log
+logs/
 
 # Ignore output files
 *.srt
