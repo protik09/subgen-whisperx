@@ -9,9 +9,7 @@ from datetime import datetime
 from typing import Dict
 from torch import cuda
 from utils.constants import DEFAULT_INPUT_VIDEO, MODEL_SIZE
-
-# Init global timer
-stopwatch: timer.Timer = timer.Timer()
+import argparse
 
 # Setup logging
 log_dir = "logs"
@@ -19,60 +17,71 @@ os.makedirs(log_dir, exist_ok=True)
 log_filename = os.path.join(
     log_dir, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_subgen.log"
 )
-logging.basicConfig(filename=log_filename, level=logging.DEBUG)
-coloredlogs.install(level="DEBUG")
+LOGGING_LEVEL = ["DEBUG", logging.DEBUG]
+logging.basicConfig(filename=log_filename, filemode="a", level=LOGGING_LEVEL[1])
+coloredlogs.install(level=LOGGING_LEVEL[0])
+
+# Init global timer
+stopwatch: timer.Timer = timer.Timer(LOGGING_LEVEL[0])
 
 
 # Function to accept file path from commandline argument
-def get_input_video():
+def get_input_video(video_path: str) -> str:
+    logger = logging.getLogger("get_input_video")
     if len(sys.argv) != 2:
-        logging.info(
+        logger.info(
             f"No input video provided. Using debugging video path: {DEFAULT_INPUT_VIDEO}"
         )
         return DEFAULT_INPUT_VIDEO
     else:
-        video_path: str = str(sys.argv[1])
         # Check if the input video exists and is a video file using ffprobe
         if os.path.exists(video_path):
-            if (
-                ffmpeg.probe(video_path)["format"]["format_name"]
-                == "mkv,mov,mp4,m4a,3gp,avi,flv"
-            ):
+            if ffmpeg.probe(video_path)["format"]["format_name"] in [
+                "mkv",
+                "mov",
+                "mp4",
+                "m4a",
+                "3gp",
+                "avi",
+                "flv",
+            ]:
                 return video_path
             else:
                 raise ValueError("Unsupported video format.")
         else:
-            logging.error(f"Error: Input video '{video_path}' does not exist.")
+            logger.error(f"Error: Input video '{video_path}' does not exist.")
             raise FileNotFoundError
 
 
 def get_device():
+    logger = logging.getLogger("get_device")
     """Determine the best available device with graceful fallback"""
     # Check if an nVidia card is available
     # If nvida-smi is not available, it will fall back to CPU
     if os.system("nvidia-smi") == 0:
-        logging.info("nVidia GPU detected.")
+        logger.info("nVidia GPU detected.")
         if cuda.is_available():
-            logging.info("CUDA available.")
+            logger.info("CUDA available.")
             return "cuda"
         else:
-            logging.warning("CUDA is not accessible on your nVidia GPU.")
-            logging.warning(
-                "Please refer to the CUDNN and CUBLAS installation guide at https://developer.nvidia.com/cudnn and https://developer.nvidia.com/cublas. Using CPU instead."
+            logger.warning("CUDA is not accessible on your nVidia GPU.")
+            logger.warning(
+                "Please refer to the CUDNN and CUDA installation guide at https://developer.nvidia.com/cudnn and https://developer.nvidia.com/cuda-downloads."
             )
+            logger.warning("Using CPU instead.")
             return "cpu"
     else:
-        logging.info("nVidia GPU not available.")
+        logger.info("nVidia GPU not available.")
 
     try:
         if cuda.is_available():
             return "cuda"
         else:
-            logging.warning("CUDA not available, falling back to CPU")
+            logger.warning("CUDA not available, falling back to CPU")
             return "cpu"
     except Exception as e:
-        logging.error(f"Warning: Error checking CUDA availability ({str(e)})")
-        logging.warning("Falling back to CPU.")
+        logger.error(f"Warning: Error checking CUDA availability ({str(e)})")
+        logger.warning("Falling back to CPU.")
 
 
 def extract_audio(video_path: str = DEFAULT_INPUT_VIDEO) -> str:
@@ -93,6 +102,7 @@ def extract_audio(video_path: str = DEFAULT_INPUT_VIDEO) -> str:
         - Uses a larger thread queue size for better throughput
         - Enables fast seeking for improved performance
     """
+    logger = logging.getLogger("extract_audio")
     stopwatch.start("Audio Extraction")
     extracted_audio_path: str = (
         f"audio-{os.path.splitext(os.path.basename(video_path))[0]}.mp3"
@@ -120,6 +130,7 @@ def extract_audio(video_path: str = DEFAULT_INPUT_VIDEO) -> str:
 
 
 def transcribe(audio_path: str, device: str) -> Dict:
+    logger = logging.getLogger("transcribe")
     stopwatch.start("Transcription")
 
     # Load model
@@ -140,9 +151,9 @@ def transcribe(audio_path: str, device: str) -> Dict:
     # Get aligned segments
     segments = aligned_result["segments"]
 
-    logging.info(f"Language: {language}")
+    logger.info(f"Language: {language}")
     for segment in segments:
-        logging.debug(
+        logger.debug(
             f"[{segment['start']:.2f}s -> {segment['end']:.2f}s] {segment['text']}"
         )
 
@@ -151,10 +162,11 @@ def transcribe(audio_path: str, device: str) -> Dict:
 
 
 def generate_subtitles(segments: Dict) -> str:
+    logger = logging.getLogger("generate_subtitles")
     srt_content = []
     for i, segment in enumerate(segments, start=1):
-        segment_start = timer.format_time(segment["start"])
-        segment_end = timer.format_time(segment["end"])
+        segment_start = timer.Timer.format_time(segment["start"])
+        segment_end = timer.Timer.format_time(segment["end"])
         text = segment["text"].strip()
 
         # SRT format: [segment number] [start] --> [end] [text]
@@ -162,10 +174,11 @@ def generate_subtitles(segments: Dict) -> str:
         srt_content.append(f"{segment_start} --> {segment_end}")
         srt_content.append(f"{text}{os.linesep}")
 
-    return "\n".join(srt_content)
+    return f"{os.linesep}".join(srt_content)
 
 
 def post_process(subtitles: str) -> str:
+    logger = logging.getLogger("post_process")
     """Post-process the generated subtitles.
     This function performs additional processing on the generated subtitles to improve readability
     and ensure compliance with common subtitle standards. The post-processing steps include:
@@ -193,21 +206,43 @@ def post_process(subtitles: str) -> str:
 
 
 def main():
+    logger = logging.getLogger("main")
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Subtitle Generator")
+    parser.add_argument(
+        "input_video",
+        nargs="?",
+        default=DEFAULT_INPUT_VIDEO,
+        help="Path to the input video file",
+    )
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Set the logging level",
+    )
+    args = parser.parse_args()
+
+    # Set logging level
+    logging_level = getattr(logging, args.log_level.upper(), logging.DEBUG)
+    logging.getLogger().setLevel(logging_level)
+    coloredlogs.install(level=logging_level)
+
     audio_flag: bool = False
-    input_media_path: str = ""
+    input_media_path: str = args.input_video
     # Get video
     try:
-        input_media_path: str = get_input_video()
-        logging.info(f"Input video: {input_media_path}")
+        input_media_path: str = get_input_video(input_media_path)
+        logger.info(f"Input video: {input_media_path}")
     except ValueError:
         input_media_path = str(sys.argv[1])
         if ffmpeg.probe(input_media_path)["format"]["format_name"] == "mp3,wav,flac":
-            logging.info("The input file is an audio file")
+            logger.info("The input file is an audio file")
             audio_flag = True
         else:
             raise ValueError("Unsupported audio format.")
     except Exception as e:
-        logging.error(f"An error occurred: {e}")
+        logger.error(f"An error occurred: {e}")
         return
 
     # Extract Audio from Video if not an audio file
@@ -223,9 +258,7 @@ def main():
     subtitles: str = post_process(subtitles=subtitles_raw)
 
     # The following should generate something like "input.ai.srt" from "input.mp4"
-    subtitle_file_name = (
-        f"{os.path.basename(input_media_path.rsplit('.', 1)[0])}.ai-{language}.srt"
-    )
+    subtitle_file_name = f"{os.path.basename(input_media_path.rsplit('.', 1)[0])}.ai-{language}.srt"
 
     # Write subtitles to file
     subtitle_path = os.path.join(os.path.dirname(input_media_path), subtitle_file_name)
@@ -233,9 +266,9 @@ def main():
     try:
         with open(subtitle_path, "w", encoding="utf-8") as f:
             f.write(subtitles)
-            logging.info(f"Subtitle file generated: {subtitle_file_name}")
+            logger.info(f"Subtitle file generated: {subtitle_file_name}")
     except Exception as e:
-        logging.error(f"An error occurred while writing the subtitle file: {e}")
+        logger.error(f"An error occurred while writing the subtitle file: {e}")
 
     # Print summary of processing times
     stopwatch.summary()

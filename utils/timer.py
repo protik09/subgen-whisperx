@@ -66,7 +66,7 @@ class Timer:
 
     def summary(self) -> None:
         total: float = 0
-        self.logger.info(f"{os.linesep}=== Processing Times ===")
+        self.logger.info(f"=== Processing Times ===")
         for name, timing in self.timings.items():
             duration: float = timing["duration"]
             total += duration
