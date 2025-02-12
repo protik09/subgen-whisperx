@@ -1,5 +1,7 @@
 whisperx
+ffmpeg
 ffmpeg-python
+python-ffmpeg 
 tiktoken
 torch
 coloredlogs
