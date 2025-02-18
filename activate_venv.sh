@@ -10,6 +10,7 @@ VENV_FOUND=$(find "$FOLDER" -type d \( -name ".venv" -o -name "venv" \))
 if [ -z "$VENV_FOUND" ]; then
     echo "No Python venv found. Creating a new one..."
     # Create venv with system packages to avoid external management issues
+    sudo apt install python3-venv ffmpeg
     python -m venv .venv
     
     # Determine the activation script path based on OS
