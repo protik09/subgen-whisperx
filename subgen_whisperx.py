@@ -34,20 +34,17 @@ def get_input_video(video_path: str) -> str:
         )
         return DEFAULT_INPUT_VIDEO
     else:
-        # Check if the input video exists and is a video file using ffprobe
+        # Check if the input video exists and is a video file
         if os.path.exists(video_path):
-            if ffmpeg.probe(video_path)["format"]["format_name"] in [
-                "mkv",
-                "mov",
-                "mp4",
-                "m4a",
-                "3gp",
-                "avi",
-                "flv",
-            ]:
+            if ffmpeg.probe(video_path)["streams"][0]["codec_type"] == "audio":
+                raise ValueError
+            elif ffmpeg.probe(video_path)["streams"][0]["codec_type"] == "video":
                 return video_path
             else:
-                raise ValueError("Unsupported video format.")
+                logger.error(
+                    f"Error: Input file '{video_path}' is neither a video nor an audio file."
+                )
+                raise TypeError
         else:
             logger.error(f"Error: Input video '{video_path}' does not exist.")
             raise FileNotFoundError
