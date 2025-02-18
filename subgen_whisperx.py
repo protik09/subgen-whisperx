@@ -51,24 +51,24 @@ def get_input_video(video_path: str) -> str:
 
 
 def get_device():
-    logger = logging.getLogger("get_device")
     """Determine the best available device with graceful fallback"""
+    logger = logging.getLogger("get_device")
     # Check if an nVidia card is available
     # If nvida-smi is not available, it will fall back to CPU
-    if os.system("nvidia-smi") == 0:
-        logger.info("nVidia GPU detected.")
-        if cuda.is_available():
-            logger.info("CUDA available.")
-            return "cuda"
-        else:
-            logger.warning("CUDA is not accessible on your nVidia GPU.")
-            logger.warning(
-                "Please refer to the CUDNN and CUDA installation guide at https://developer.nvidia.com/cudnn and https://developer.nvidia.com/cuda-downloads."
-            )
-            logger.warning("Using CPU instead.")
-            return "cpu"
-    else:
-        logger.info("nVidia GPU not available.")
+    # if os.system("nvidia-smi") == 0:
+    #     logger.info("nVidia GPU detected.")
+    #     if cuda.is_available():
+    #         logger.info("CUDA available.")
+    #         return "cuda"
+    #     else:
+    #         logger.warning("CUDA is not accessible on your nVidia GPU.")
+    #         logger.warning(
+    #             "Please refer to the CUDNN and CUDA installation guide at https://developer.nvidia.com/cudnn and https://developer.nvidia.com/cuda-downloads."
+    #         )
+    #         logger.warning("Using CPU instead.")
+    #         return "cpu"
+    # else:
+    #     logger.info("nVidia GPU not available.")
 
     try:
         if cuda.is_available():
