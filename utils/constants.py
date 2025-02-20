@@ -36,9 +36,9 @@ if torch.cuda.is_available():
     vram_gb = round((torch.cuda.get_device_properties(0).total_memory / 1.073742e+9), 1)
     print(f"Detected VRAM: {vram_gb} GB")
     if vram_gb >= 8.0:
-        MODEL_SIZE = "large-v3"
+        MODEL_SIZE = "small.en"
     elif vram_gb >= 5.0:
-        MODEL_SIZE = "medium.en"
+        MODEL_SIZE = "small.en"
     elif vram_gb >= 3.5:
         MODEL_SIZE = "small.en"
     elif vram_gb >= 2.5:

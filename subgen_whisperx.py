@@ -28,7 +28,7 @@ stopwatch: timer.Timer = timer.Timer(LOGGING_LEVEL[0])
 # Function to accept file path from commandline argument
 def get_input_video(video_path: str) -> str:
     logger = logging.getLogger("get_input_video")
-    if len(sys.argv) != 2:
+    if not video_path:
         logger.info(
             f"No input video provided. Using debugging video path: {DEFAULT_INPUT_VIDEO}"
         )
@@ -207,12 +207,13 @@ def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Subtitle Generator")
     parser.add_argument(
-        "input_video",
-        nargs="?",
+        "-f",
+        "--file",
         default=DEFAULT_INPUT_VIDEO,
         help="Path to the input video file",
     )
     parser.add_argument(
+        "-l",
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
@@ -226,7 +227,7 @@ def main():
     coloredlogs.install(level=logging_level)
 
     audio_flag: bool = False
-    input_media_path: str = args.input_video
+    input_media_path: str = args.file
     # Get video
     try:
         input_media_path: str = get_input_video(input_media_path)
