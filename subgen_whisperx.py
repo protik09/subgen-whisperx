@@ -251,13 +251,13 @@ def main():
     parser.add_argument(
         "-f",
         "--file",
-        default=DEFAULT_INPUT_VIDEO,
+        default=None,
         help="Path to the input video file",
     )
     parser.add_argument(
         "-d",
         "--directory",
-        default=DEFAULT_INPUT_VIDEO,
+        default=None,
         help="Path to the input video file",
     )
     parser.add_argument(
