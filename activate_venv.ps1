@@ -1,104 +1,150 @@
-# Set the folder to the directory where the script is running from
-$FOLDER_HOME = $PSScriptRoot
-$VENV_EXIST = 0
-Write-Host "Folder set to $FOLDER_HOME"
-
-# Find the location of the conda install
-$condaModule = Get-Module -Name (Get-Command conda -CommandType Alias).Source
-if ($condaModule) {
-    Write-Host "Conda module is available."
-    # Check to see if whisperx conda environment is available
-    if (conda env list | Select-String -Pattern "whisperx") {
-        Write-Host "WhisperX conda environment found."
-        # Check to see if the whisperx conda environment is activated
-        if ($env:CONDA_DEFAULT_ENV -eq "whisperx") {
-            Write-Host "WhisperX conda environment is already activated."
-        }
-        # If the whisperx conda environment is not activated then activate else do nothing
-        else {
-            Write-Host "Activating WhisperX conda environment..."
-            conda activate whisperx
-        }
-        $VENV_EXIST = 1
+# Script configuration
+$config = @{
+    CondaPath        = "$HOME\miniconda3\condabin"
+    CudnnUrl         = "https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/cudnn-windows-x86_64-8.9.7.29_cuda12-archive.zip"
+    RequiredPackages = @{
+        Conda  = "Anaconda.Miniconda3"
+        FFmpeg = "Gyan.ffmpeg"
     }
-    # Otherwise install the whisperx conda environment
-    else {
-        Write-Host "WhisperX conda environment not found. Creating...."
-        conda create -n whisperx python=3.10 -y
-        conda activate whisperx
-        conda install -y pytorch==2.0.0 torchaudio==2.0.0 pytorch-cuda=11.8 -c pytorch -c nvidia
-        pip install whisperx ffmpeg python-ffmpeg ffmpeg-python coloredlogs
+}
 
-        # Below is the fix for issues installing whisperx. See (https://github.com/m-bain/whisperX/issues/983) for more details
-        pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121 --force-reinstall --no-cache-dir
+function Test-CondaInstall {
+    try {
+        $condaModule = Get-Module -Name (Get-Command conda -CommandType Alias).Source
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
 
-        # Get zip file from nvidia cudnn
-        $url = "https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/cudnn-windows-x86_64-8.9.7.29_cuda12-archive.zip"
-        $outputFile = Join-Path $PWD.Path "cudnn-windows-x86_64-8.9.7.29_cuda12-archive.zip"
+function Test-WhisperXEnv {
+    if (conda env list | Select-String -Pattern "whisperx") {
+        return $true
+    }
+    return $false
+}
 
-        Write-Host "Downloading CUDA cudnn archive..."
-        Invoke-WebRequest -Uri $url -OutFile $outputFile
+function Test-CudnnInstall {
+    $whisperxBinPath = "$(conda info --base)\envs\whisperx\bin"
+    if (Test-Path "$whisperxBinPath\cudnn*.dll") {
+        return $true
+    }
+    return $false
+}
 
-        if (Test-Path $outputFile) {
-            Write-Host "Download completed successfully to: $outputFile"
-        }
-        else {
-            Write-Host "Error: Download failed"
-            exit 1
-        }
+function Test-ffmpegInstall {
+    if (Get-Command ffmpeg -ErrorAction SilentlyContinue) {
+        return $true
+    }
+    return $false
+}
 
-        # Unzip the file
-        Expand-Archive -Path "$FOLDER_HOME\cudnn-windows-x86_64-8.9.7.29_cuda12-archive.zip" -DestinationPath "$FOLDER_HOME\cudnn" -Force
-        Remove-Item -Path "$FOLDER_HOME\cudnn-windows-x86_64-8.9.7.29_cuda12-archive.zip" -Force
+function Install-ffmpeg {
+    Write-Host "Installing FFmpeg..."
+    winget install -e --id=$config.RequiredPackages.FFmpeg
+}
 
-        # Locate the files inside the downloaded zip bin folder then extract them to your whisperx environment bin folder
-        $cudnn_files = Get-ChildItem -Path "$FOLDER_HOME\cudnn\cudnn-windows-x86_64-8.9.7.29_cuda12-archive\bin" -Recurse -Filter "cudnn*.dll"
+function Install-Conda {
+    Write-Host "Installing Conda and FFmpeg..."
+    winget install -e --id=$config.RequiredPackages.Conda
 
+    if ($env:Path -split ';' -notcontains $config.CondaPath) {
+        $env:Path += ";$config.CondaPath"
+        [System.Environment]::SetEnvironmentVariable("Path", $env:Path, [System.EnvironmentVariableTarget]::User)
+    }
+
+    try {
+        $env:ChocolateyInstall = Convert-Path "$((Get-Command choco).Path)\..\.."
+        Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1" -ErrorAction Stop
+        refreshenv
+        conda init
+        refreshenv
+        return $true
+    }
+    catch {
+        Write-Host "Error: Chocolatey profile not found. Please install Chocolatey and try again."
+        return $false
+    }
+}
+
+function Install-WhisperX {
+    Write-Host "Installing WhisperX environment..."
+    conda create -n whisperx python=3.10 -y
+    conda activate whisperx
+    conda install -y pytorch==2.0.0 torchaudio==2.0.0 pytorch-cuda=11.8 -c pytorch -c nvidia
+    pip install whisperx ffmpeg python-ffmpeg ffmpeg-python coloredlogs
+    pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121 --force-reinstall --no-cache-dir
+}
+
+function Install-Cudnn {
+    Write-Host "Installing CUDNN..."
+    $outputFile = Join-Path -Path $CWD -ChildPath "cudnn-windows-x86_64-8.9.7.29_cuda12-archive.zip"
+
+    try {
+        Invoke-WebRequest -Uri $config.CudnnUrl -OutFile $outputFile
+        Expand-Archive -Path $outputFile -DestinationPath "$CWD\cudnn" -Force
+        $cudnn_files = Get-ChildItem -Path "$CWD\cudnn\cudnn-windows-x86_64-8.9.7.29_cuda12-archive\bin" -Recurse -Filter "cudnn*.dll"
+        
         foreach ($file in $cudnn_files) {
             Copy-Item -Path $file.FullName -Destination "$(conda info --base)\envs\whisperx\bin" -Force
         }
-        # Remove the extracted folder
-        Remove-Item -Path "$FOLDER_HOME\cudnn" -Recurse -Force
-        Remove-Item -Path "$FOLDER_HOME\cudnn-windows-x86_64-8.9.7.29_cuda12-archive.zip" -Force
 
-        Write-Host "WhisperX conda environment created and activated."
+        # Cleanup
+        Remove-Item -Path "$CWD\cudnn" -Recurse -Force
+        Remove-Item -Path $outputFile -Force
+        return $true
+    }
+    catch {
+        Write-Host "Error installing CUDNN: $_"
+        return $false
     }
 }
-# If the conda module is not available, prompt the user to install it
-else {
-    Write-Host "Conda module is not available. Do you wish to install it? (y/n)"
-    $response = Read-Host
 
-    if ($response -eq 'y' -or $response -eq 'Y') {
-        Write-Host "Starting conda installation..."
-        winget install -e --id=Anaconda.Miniconda3
-        # Refresh shell session and reload environment variables
-        # https://stackoverflow.com/questions/46758437/how-to-refresh-the-environment-of-a-powershell-session-after-a-chocolatey-instal
+function Main {
+    $FOLDER_HOME = $PSScriptRoot
+    Set-Location -Path $FOLDER_HOME
+    $CWD = Get-Location
+    Write-Host "Working directory: $CWD"
 
-        # Make `refreshenv` available right away, by defining the $env:ChocolateyInstall
-        # variable and importing the Chocolatey profile module.
-        # Note: Using `. $PROFILE` instead *may* work, but isn't guaranteed to.
-        $env:ChocolateyInstall = Convert-Path "$((Get-Command choco).Path)\..\.."
-        # Import the Chocolatey profile module and if it fails, exit with an error code.
-        try {
-            Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1" -ErrorAction Stop
-        } catch {
-            Write-Host "Chocolatey profile module could not be imported. Please install chocolatey and try again."
+    # Check and install components as needed
+    if (-not (Test-CondaInstall)) {
+        Write-Host "Conda not found. Installing..."
+        if (-not (Install-Conda)) {
+            Write-Host "Failed to install Conda. Exiting..."
             exit 1
         }
+        Write-Host "Please restart your shell to complete Conda installation."
+        exit 0
+    }
 
-        # refreshenv is now an alias for Update-SessionEnvironment
-        # (rather than invoking refreshenv.cmd, the *batch file* for use with cmd.exe)
-        # This should make conda accessible via the refreshed $env:PATH, so that it
-        # can be called by name only.
-        refreshenv
+    if (-not (Test-ffmpegInstall)) {
+        Write-Host "FFmpeg not found. Installing..."
+        Install-ffmpeg
+    }
 
-        # Run conda init
-        conda init
-        Write-Host "Conda installation completed. Please check for any errors."
+    if (-not (Test-WhisperXEnv)) {
+        Write-Host "WhisperX environment not found. Installing..."
+        Install-WhisperX
+    }
 
-    } else {
-        Write-Host "Conda installation skipped."
-        exit 1
+    if (-not (Test-CudnnInstall)) {
+        Write-Host "CUDNN not found. Installing..."
+        if (-not (Install-Cudnn)) {
+            Write-Host "Failed to install CUDNN. Exiting..."
+            exit 1
+        }
+    }
+
+    # Activate WhisperX environment if not already active
+    if ($env:CONDA_DEFAULT_ENV -ne "whisperx") {
+        Write-Host "Activating WhisperX environment..."
+        conda activate whisperx
+    }
+    else {
+        Write-Host "WhisperX environment is already active."
     }
 }
+
+# Execute the script
+Main
