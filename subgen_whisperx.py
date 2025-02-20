@@ -1,12 +1,13 @@
 import sys
 import os
+from tracemalloc import stop
 import ffmpeg
 import whisperx
 import utils.timer as timer
 import logging
 import coloredlogs
 from datetime import datetime
-from typing import Dict
+from typing import Dict, Tuple, List
 from torch import cuda
 from utils.constants import DEFAULT_INPUT_VIDEO, MODEL_SIZE
 import argparse
@@ -23,31 +24,6 @@ coloredlogs.install(level=LOGGING_LEVEL[0])
 
 # Init global timer
 stopwatch: timer.Timer = timer.Timer(LOGGING_LEVEL[0])
-
-
-# Function to accept file path from commandline argument
-def get_input_video(video_path: str) -> str:
-    logger = logging.getLogger("get_input_video")
-    if not video_path:
-        logger.info(
-            f"No input video provided. Using debugging video path: {DEFAULT_INPUT_VIDEO}"
-        )
-        return DEFAULT_INPUT_VIDEO
-    else:
-        # Check if the input video exists and is a video file
-        if os.path.exists(video_path):
-            if ffmpeg.probe(video_path)["streams"][0]["codec_type"] == "audio":
-                raise ValueError
-            elif ffmpeg.probe(video_path)["streams"][0]["codec_type"] == "video":
-                return video_path
-            else:
-                logger.error(
-                    f"Error: Input file '{video_path}' is neither a video nor an audio file."
-                )
-                raise TypeError
-        else:
-            logger.error(f"Error: Input video '{video_path}' does not exist.")
-            raise FileNotFoundError
 
 
 def get_device():
@@ -81,6 +57,63 @@ def get_device():
         logger.warning("Falling back to CPU.")
 
 
+# Function to check if media file is valid
+def is_media_file(file_path):
+    logger = logging.getLogger("is_media_file")
+    _valid_media_flag = False
+    _valid_audio_flag = False
+    try:
+        probe = ffmpeg.probe(file_path)
+        # Check whether a media stream exists in the file
+        if len(probe["streams"]) > 0:
+            stream_type: str = probe["streams"][0]["codec_type"]
+            if stream_type == "audio" or stream_type == "video":
+                _valid_media_flag = True
+                if stream_type == "audio":
+                    _valid_audio_flag = True
+        return _valid_media_flag, _valid_audio_flag
+    except Exception as e:
+        logger.error(f"An error occurred while probing the file: {e}")
+        return False, False
+
+def get_media_files(
+    directory: str = None, file: str = None
+) -> List[Tuple[str, bool]]:
+    """Get list of valid media files from directory and/or single file.
+
+    Args:
+        directory (str, optional): Directory path to search for media files
+        file (str, optional): Single file path to check
+
+    Returns:
+        List[Tuple[str, bool]]: List of tuples containing (file_path, is_audio_flag)
+    """
+    logger = logging.getLogger("get_media_files")
+    media_files: List[Tuple[str, bool]] = []
+
+    if directory:
+        for root, _, files in os.walk(directory):
+            for f in files:
+                file_path = os.path.join(root, f)
+                is_valid, is_audio = is_media_file(file_path)
+                if is_valid:
+                    media_files.append((file_path, is_audio))
+
+        if not media_files:
+            logger.error(f"No valid media files found in directory '{directory}'")
+            return []
+
+    if file:
+        is_valid, is_audio = is_media_file(file)
+        if is_valid:
+            media_files.append((file, is_audio))
+        else:
+            logger.error(f"Error: File '{file}' is not a valid media file.")
+            return []
+
+    return media_files
+
+
 def extract_audio(video_path: str = DEFAULT_INPUT_VIDEO) -> str:
     """Extract audio from input video file using ffmpeg.
     This function extracts the audio track from the input video file and converts it to MP3 format
@@ -105,23 +138,26 @@ def extract_audio(video_path: str = DEFAULT_INPUT_VIDEO) -> str:
         f"audio-{os.path.splitext(os.path.basename(video_path))[0]}.mp3"
     )
 
-    # Add optimization flags to ffmpeg
-    stream = ffmpeg.input(video_path)
-    stream = ffmpeg.output(
-        stream,
-        extracted_audio_path,
-        acodec="libmp3lame",  # Faster MP3 encoder
-        ac=1,  # Convert to mono
-        ar=16000,  # Lower sample rate (whisper uses 16kHz)
-        **{
-            "q:a": 0,  # VBR encoding
-            "threads": 0,  # Use all CPU threads
-            "thread_queue_size": 1024,  # Larger queue for better throughput
-            "fflags": "+fastseek",  # Fast seeking
-        },
-    )
+    try:
+        # Add optimization flags to ffmpeg
+        stream = ffmpeg.input(video_path)
+        stream = ffmpeg.output(
+            stream,
+            extracted_audio_path,
+            acodec="libmp3lame",  # Faster MP3 encoder
+            ac=1,  # Convert to mono
+            ar=16000,  # Lower sample rate (whisper uses 16kHz)
+            **{
+                "q:a": 0,  # VBR encoding
+                "threads": 0,  # Use all CPU threads
+                "thread_queue_size": 1024,  # Larger queue for better throughput
+                "fflags": "+fastseek",  # Fast seeking
+            },
+        )
 
-    ffmpeg.run(stream, overwrite_output=True)
+        ffmpeg.run(stream, overwrite_output=True)
+    except Exception as e:
+        logger.error(f"An error occurred while extracting audio: {e}")
     stopwatch.stop("Audio Extraction")
     return extracted_audio_path
 
@@ -193,7 +229,13 @@ def post_process(subtitles: str) -> str:
     subtitles_clean: str = ""
     for line in subtitles:
         if len(line) > 150:
-            line = line[:150].rsplit(" ", 1)[0]
+            try:
+                line = line[:150].rsplit(" ", 1)[0]
+            except ValueError:
+                logger.warning(
+                    f"Line too long and cannot be split: {line}. Clipping to 150 characters."
+                )
+                line = line[:150]
         else:
             pass
 
@@ -213,6 +255,12 @@ def main():
         help="Path to the input video file",
     )
     parser.add_argument(
+        "-d",
+        "--directory",
+        default=DEFAULT_INPUT_VIDEO,
+        help="Path to the input video file",
+    )
+    parser.add_argument(
         "-l",
         "--log-level",
         default="INFO",
@@ -226,47 +274,57 @@ def main():
     logging.getLogger().setLevel(logging_level)
     coloredlogs.install(level=logging_level)
 
-    audio_flag: bool = False
-    input_media_path: str = args.file
-    # Get video
-    try:
-        input_media_path: str = get_input_video(input_media_path)
-        logger.info(f"Input video: {input_media_path}")
-    except ValueError:
-        input_media_path = str(sys.argv[1])
-        if ffmpeg.probe(input_media_path)["format"]["format_name"] == "mp3,wav,flac":
-            logger.info("The input file is an audio file")
-            audio_flag = True
-        else:
-            raise ValueError("Unsupported audio format.")
-    except Exception as e:
-        logger.error(f"An error occurred: {e}")
+    # Check that args.directory is a valid directory only if specified in the arguments
+    if args.directory and not os.path.isdir(args.directory):
+        logger.error(f"Error: Directory '{args.directory}' does not exist.")
+        return
+    # Check that args.file is a valid file only if specified in the arguments
+    if args.file and not os.path.isfile(args.file):
+        logger.error(f"Error: File '{args.file}' does not exist.")
         return
 
-    # Extract Audio from Video if not an audio file
-    if not audio_flag:
-        audio_path: str = extract_audio(video_path=input_media_path)
-    else:
-        audio_path: str = input_media_path
+    media_files = get_media_files(args.directory, args.file)
+    if not media_files:
+        return
 
-    language, segments = transcribe(audio_path=audio_path, device=get_device())
+    # Process each media file
+    for media_file in media_files:
+        input_media_path = media_file[0]
+        audio_flag = media_file[1]
+        file_name = str(os.path.basename(input_media_path.rsplit(".", 1)[0]))
+        stopwatch.start(file_name)
 
-    subtitles_raw: str = generate_subtitles(segments=segments)
+        # Extract Audio
+        if not audio_flag:
+            logger.info(f"Processing video file: {input_media_path}")
+            audio_path: str = extract_audio(video_path=input_media_path)
+        else:
+            logger.info(f"Processing audio file: {input_media_path}")
+            audio_path = input_media_path
 
-    subtitles: str = post_process(subtitles=subtitles_raw)
+        # Transcribe audio
+        language, segments = transcribe(audio_path=audio_path, device=get_device())
 
-    # The following should generate something like "input.ai.srt" from "input.mp4"
-    subtitle_file_name = f"{os.path.basename(input_media_path.rsplit('.', 1)[0])}.ai-{language}.srt"
+        # Generate unprocessed raw subtitles
+        subtitles_raw: str = generate_subtitles(segments=segments)
 
-    # Write subtitles to file
-    subtitle_path = os.path.join(os.path.dirname(input_media_path), subtitle_file_name)
+        # Post-process subtitles
+        subtitles: str = post_process(subtitles=subtitles_raw)
 
-    try:
-        with open(subtitle_path, "w", encoding="utf-8") as f:
-            f.write(subtitles)
-            logger.info(f"Subtitle file generated: {subtitle_file_name}")
-    except Exception as e:
-        logger.error(f"An error occurred while writing the subtitle file: {e}")
+        # The following should generate something like "input.ai.srt" from "input.mp4"
+        subtitle_file_name = f"{file_name}.ai-{language}.srt"
+
+        # Write subtitles to file
+        subtitle_path = os.path.join(
+            os.path.dirname(input_media_path), subtitle_file_name
+        )
+        try:
+            with open(subtitle_path, "w", encoding="utf-8") as f:
+                f.write(subtitles)
+                logger.info(f"Subtitle file generated: {subtitle_file_name}")
+        except Exception as e:
+            logger.error(f"An error occurred while writing the subtitle file: {e}")
+        stopwatch.stop(str(os.path.basename(input_media_path)))
 
     # Print summary of processing times
     stopwatch.summary()
