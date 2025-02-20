@@ -34,7 +34,7 @@ MODELS_AVAILABLE: List[str] = [
 # Check GPU VRAM and select appropriate model
 if torch.cuda.is_available():
     vram_gb = round((torch.cuda.get_device_properties(0).total_memory / 1.073742e+9), 1)
-    print(f"Detected VRAM: {vram_gb} GB")
+    # print(f"Detected VRAM: {vram_gb} GB")
     if vram_gb >= 8.0:
         MODEL_SIZE = "small.en"
     elif vram_gb >= 5.0:
@@ -48,5 +48,5 @@ if torch.cuda.is_available():
 else:
     MODEL_SIZE = "tiny.en"  # Fallback if no GPU is available
 
-print(f"Using model size: {MODEL_SIZE}")
+# print(f"Using model size: {MODEL_SIZE}")
 # MODEL_SIZE: str = "large-v3"  # Use this model for transcription

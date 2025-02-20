@@ -1,6 +1,5 @@
 import sys
 import os
-from tracemalloc import stop
 import ffmpeg
 import whisperx
 import utils.timer as timer
@@ -9,7 +8,7 @@ import coloredlogs
 from datetime import datetime
 from typing import Dict, Tuple, List
 from torch import cuda
-from utils.constants import DEFAULT_INPUT_VIDEO, MODEL_SIZE
+from utils.constants import DEFAULT_INPUT_VIDEO, MODEL_SIZE, MODELS_AVAILABLE
 import argparse
 
 # Setup logging
@@ -18,7 +17,7 @@ os.makedirs(log_dir, exist_ok=True)
 log_filename = os.path.join(
     log_dir, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_subgen.log"
 )
-LOGGING_LEVEL = ["DEBUG", logging.DEBUG]
+LOGGING_LEVEL = ["ERROR", logging.ERROR]
 logging.basicConfig(filename=log_filename, filemode="a", level=LOGGING_LEVEL[1])
 coloredlogs.install(level=LOGGING_LEVEL[0])
 
@@ -26,7 +25,7 @@ coloredlogs.install(level=LOGGING_LEVEL[0])
 stopwatch: timer.Timer = timer.Timer(LOGGING_LEVEL[0])
 
 
-def get_device():
+def get_device(device_selection: str = None) -> str:
     """Determine the best available device with graceful fallback"""
     logger = logging.getLogger("get_device")
     # Check if an nVidia card is available
@@ -46,15 +45,19 @@ def get_device():
     # else:
     #     logger.info("nVidia GPU not available.")
 
-    try:
-        if cuda.is_available():
-            return "cuda"
-        else:
-            logger.warning("CUDA not available, falling back to CPU")
-            return "cpu"
-    except Exception as e:
-        logger.error(f"Warning: Error checking CUDA availability ({str(e)})")
-        logger.warning("Falling back to CPU.")
+    if device_selection is None or "cuda" in device_selection.lower():
+        try:
+            if cuda.is_available():
+                logger.debug("CUDA available.")
+                return "cuda"
+            else:
+                logger.warning("CUDA not available, falling back to CPU")
+        except Exception as e:
+            logger.error(f"Warning: Error checking CUDA availability ({str(e)})")
+            logger.warning("Falling back to CPU.")
+    else:
+        pass
+    return "cpu"
 
 
 # Function to check if media file is valid
@@ -101,7 +104,7 @@ def get_media_files(
 
         if not media_files:
             logger.error(f"No valid media files found in directory '{directory}'")
-            return []
+            return None
 
     if file:
         is_valid, is_audio = is_media_file(file)
@@ -109,7 +112,7 @@ def get_media_files(
             media_files.append((file, is_audio))
         else:
             logger.error(f"Error: File '{file}' is not a valid media file.")
-            return []
+            return None
 
     return media_files
 
@@ -162,12 +165,12 @@ def extract_audio(video_path: str = DEFAULT_INPUT_VIDEO) -> str:
     return extracted_audio_path
 
 
-def transcribe(audio_path: str, device: str) -> Dict:
+def transcribe(audio_path: str, device: str, model_size: str) -> Dict:
     logger = logging.getLogger("transcribe")
     stopwatch.start("Transcription")
 
     # Load model
-    model = whisperx.load_model(MODEL_SIZE, device, compute_type="int8")
+    model = whisperx.load_model(model_size, device, compute_type="int8")
 
     # Initial transcription
     initial_result = model.transcribe(audio_path, batch_size=16)
@@ -214,11 +217,7 @@ def post_process(subtitles: str) -> str:
     logger = logging.getLogger("post_process")
     """Post-process the generated subtitles.
     This function performs additional processing on the generated subtitles to improve readability
-    and ensure compliance with common subtitle standards. The post-processing steps include:
-    - Removing duplicate lines
-    - Removing empty lines
-    - Removing leading/trailing whitespace
-    - Normalizing line endings
+    and ensure compliance with common subtitle standards.
     Args:
         subtitles (list): The generated subtitles as a list of strings
     Returns:
@@ -252,18 +251,32 @@ def main():
         "-f",
         "--file",
         default=None,
-        help="Path to the input video file",
+        help="Path to the input media file",
     )
     parser.add_argument(
         "-d",
         "--directory",
         default=None,
-        help="Path to the input video file",
+        help="Path to directory containing media files",
+    )
+    parser.add_argument(
+        "-c",
+        "--compute_device",
+        default=None,
+        choices=["cuda", "cpu"],
+        help="Device to use for computation (cuda or cpu)",
+    )
+    parser.add_argument(
+        "-m",
+        "--model_size",
+        default="base.en",
+        choices=MODELS_AVAILABLE,
+        help="Whisper model size to use for transcription",
     )
     parser.add_argument(
         "-l",
         "--log-level",
-        default="INFO",
+        default="ERROR",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         help="Set the logging level",
     )
@@ -273,6 +286,11 @@ def main():
     logging_level = getattr(logging, args.log_level.upper(), logging.DEBUG)
     logging.getLogger().setLevel(logging_level)
     coloredlogs.install(level=logging_level)
+
+    # If no args are passed to argparser, print help and exit
+    if len(sys.argv) == 1:
+        parser.print_help(sys.stderr)
+        sys.exit(1)
 
     # Check that args.directory is a valid directory only if specified in the arguments
     if args.directory and not os.path.isdir(args.directory):
@@ -303,7 +321,7 @@ def main():
             audio_path = input_media_path
 
         # Transcribe audio
-        language, segments = transcribe(audio_path=audio_path, device=get_device())
+        language, segments = transcribe(audio_path=audio_path, device=get_device(args.compute_device.lower()), model_size=args.model_size.lower())
 
         # Generate unprocessed raw subtitles
         subtitles_raw: str = generate_subtitles(segments=segments)
