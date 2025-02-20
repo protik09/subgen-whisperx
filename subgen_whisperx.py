@@ -10,6 +10,7 @@ from typing import Dict, Tuple, List
 from torch import cuda
 from utils.constants import DEFAULT_INPUT_VIDEO, MODELS_AVAILABLE
 import argparse
+from halo import Halo
 
 # Setup logging
 log_dir = "logs"
@@ -163,7 +164,7 @@ def extract_audio(video_path: str = DEFAULT_INPUT_VIDEO) -> str:
     stopwatch.stop("Audio Extraction")
     return extracted_audio_path
 
-
+@Halo(text="Transcribing....", text_color="green", spinner="dots", placement="right")
 def transcribe(audio_path: str, device: str, model_size: str) -> Dict:
     logger = logging.getLogger("transcribe")
     stopwatch.start("Transcription")

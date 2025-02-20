@@ -73,7 +73,7 @@ function Install-WhisperX {
     conda create -n whisperx python=3.10 -y
     conda activate whisperx
     conda install -y pytorch==2.0.0 torchaudio==2.0.0 pytorch-cuda=11.8 -c pytorch -c nvidia
-    pip install whisperx ffmpeg python-ffmpeg ffmpeg-python coloredlogs
+    pip install whisperx ffmpeg python-ffmpeg ffmpeg-python coloredlogs halo
     pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121 --force-reinstall --no-cache-dir
 }
 
