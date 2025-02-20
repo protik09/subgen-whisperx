@@ -8,7 +8,7 @@ import coloredlogs
 from datetime import datetime
 from typing import Dict, Tuple, List
 from torch import cuda
-from utils.constants import DEFAULT_INPUT_VIDEO, MODEL_SIZE, MODELS_AVAILABLE
+from utils.constants import DEFAULT_INPUT_VIDEO, MODELS_AVAILABLE
 import argparse
 
 # Setup logging
@@ -79,9 +79,8 @@ def is_media_file(file_path):
         logger.error(f"An error occurred while probing the file: {e}")
         return False, False
 
-def get_media_files(
-    directory: str = None, file: str = None
-) -> List[Tuple[str, bool]]:
+
+def get_media_files(directory: str = None, file: str = None) -> List[Tuple[str, bool]]:
     """Get list of valid media files from directory and/or single file.
 
     Args:
@@ -321,7 +320,11 @@ def main():
             audio_path = input_media_path
 
         # Transcribe audio
-        language, segments = transcribe(audio_path=audio_path, device=get_device(args.compute_device.lower()), model_size=args.model_size.lower())
+        language, segments = transcribe(
+            audio_path=audio_path,
+            device=get_device(args.compute_device.lower()),
+            model_size=args.model_size.lower(),
+        )
 
         # Generate unprocessed raw subtitles
         subtitles_raw: str = generate_subtitles(segments=segments)
@@ -342,7 +345,7 @@ def main():
                 logger.info(f"Subtitle file generated: {subtitle_file_name}")
         except Exception as e:
             logger.error(f"An error occurred while writing the subtitle file: {e}")
-        stopwatch.stop(str(os.path.basename(input_media_path)))
+        stopwatch.stop(file_name)
 
     # Print summary of processing times
     stopwatch.summary()

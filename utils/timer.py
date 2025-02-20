@@ -66,9 +66,20 @@ class Timer:
 
     def summary(self) -> None:
         total: float = 0
-        self.logger.info(f"=== Processing Times ===")
+        self.logger.info("=== Processing Times ===")
         for name, timing in self.timings.items():
-            duration: float = timing["duration"]
+            if "duration" in timing:
+                # Timer was properly stopped
+                duration: float = timing["duration"]
+            elif "start" in timing:
+                # Timer was started but never stopped
+                duration: float = time.time() - timing["start"]
+                self.logger.warning(f"Timer '{name}' was never stopped")
+            else:
+                # Invalid timer state
+                self.logger.error(f"Invalid timer state for '{name}'")
+                continue
+                
             total += duration
             self.logger.info(f"{name}: {self.format_time(duration).replace(',', '.')}s")
         self.logger.info(f"Total time: {self.format_time(total).replace(',', '.')}s")
