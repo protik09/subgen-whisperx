@@ -128,6 +128,12 @@ function Main {
     $CWD = Get-Location
     Write-Host "Working directory: $CWD"
 
+    # Check that winget is installed
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        Write-Error "Error: winget is not installed. Please install winget and try again."
+        exit 1
+    }
+
     # Check and install components as needed
     if (-not (Test-CondaInstall)) {
         Write-Host "Conda not found. Installing..."
