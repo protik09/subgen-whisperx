@@ -33,6 +33,7 @@ Thumbs.db
 
 # Ignore debug assets
 assets/
+build/
 
 # ignore repomix output
 repomix-output.txt
