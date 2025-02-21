@@ -19,14 +19,16 @@ function Test-CondaInstall {
 }
 
 function Test-WhisperXEnv {
-    if (conda env list | Select-String -Pattern "whisperx") {
+    # Test if the WhisperX environment exists in the current folder
+    if (Test-Path "$CWD\whisperx") {
         return $true
     }
     return $false
 }
 
 function Test-CudnnInstall {
-    $whisperxBinPath = "$(conda info --base)\envs\whisperx\bin"
+    # Test if CUDNN DLLs are present in the local environment's bin directory
+    $whisperxBinPath = "$CWD\whisperx\bin"
     if (Test-Path "$whisperxBinPath\cudnn*.dll") {
         return $true
     }
@@ -70,8 +72,9 @@ function Install-Conda {
 
 function Install-WhisperX {
     Write-Host "Installing WhisperX environment..."
-    conda create -n whisperx python=3.10 -y
-    conda activate whisperx
+    # Create the environment in the current folder ($CWD\whisperx)
+    conda create --prefix "$CWD\whisperx" python=3.10 -y
+    conda activate "$CWD\whisperx"
     conda install -y pytorch==2.0.0 torchaudio==2.0.0 pytorch-cuda=11.8 -c pytorch -c nvidia
     pip install whisperx ffmpeg python-ffmpeg ffmpeg-python coloredlogs halo
     pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121 --force-reinstall --no-cache-dir
@@ -81,18 +84,33 @@ function Install-Cudnn {
     Write-Host "Installing CUDNN..."
     $outputFile = Join-Path -Path $CWD -ChildPath "cudnn-windows-x86_64-8.9.7.29_cuda12-archive.zip"
 
-    try {
+    # If the .zip file already exists, use it; otherwise, download it.
+    if (Test-Path $outputFile) {
+        Write-Host "The .zip file already exists: $outputFile"
+    }
+    else {
+        Write-Host "Downloading CUDNN from $($config.CudnnUrl)..."
         Invoke-WebRequest -Uri $config.CudnnUrl -OutFile $outputFile
+    }
+
+    try {
         Expand-Archive -Path $outputFile -DestinationPath "$CWD\cudnn" -Force
         $cudnn_files = Get-ChildItem -Path "$CWD\cudnn\cudnn-windows-x86_64-8.9.7.29_cuda12-archive\bin" -Recurse -Filter "cudnn*.dll"
         
+        # Define the local destination path in the local environment
+        $localBinPath = "$CWD\whisperx\bin"
+        if (-not (Test-Path $localBinPath)) {
+            Write-Host "Destination directory does not exist. Creating it: $localBinPath"
+            New-Item -Path $localBinPath -ItemType Directory -Force
+        }
+        
         foreach ($file in $cudnn_files) {
-            Copy-Item -Path $file.FullName -Destination "$(conda info --base)\envs\whisperx\bin" -Force
+            Write-Host "Copying: $($file.FullName) to $localBinPath"
+            Copy-Item -Path $file.FullName -Destination $localBinPath -Force
         }
 
-        # Cleanup
+        # Cleanup: remove the temporary extraction folder
         Remove-Item -Path "$CWD\cudnn" -Recurse -Force
-        Remove-Item -Path $outputFile -Force
         return $true
     }
     catch {
@@ -136,10 +154,10 @@ function Main {
         }
     }
 
-    # Activate WhisperX environment if not already active
-    if ($env:CONDA_DEFAULT_ENV -ne "whisperx") {
+    # Activate the WhisperX environment if it is not active
+    if ($env:CONDA_DEFAULT_ENV -ne "$CWD\whisperx") {
         Write-Host "Activating WhisperX environment..."
-        conda activate whisperx
+        conda activate "$CWD\whisperx"
     }
     else {
         Write-Host "WhisperX environment is already active."
