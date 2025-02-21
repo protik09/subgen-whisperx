@@ -56,6 +56,7 @@ function Install-Conda {
         [System.Environment]::SetEnvironmentVariable("Path", $env:Path, [System.EnvironmentVariableTarget]::User)
     }
 
+    # Choco stuff basically there for the magic refreshenv command
     try {
         $env:ChocolateyInstall = Convert-Path "$((Get-Command choco).Path)\..\.."
         Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1" -ErrorAction Stop
@@ -65,7 +66,7 @@ function Install-Conda {
         return $true
     }
     catch {
-        Write-Host "Error: Chocolatey profile not found. Please install Chocolatey and try again."
+        Write-Error "Error: Chocolatey profile not found. Please install Chocolatey and try again."
         return $false
     }
 }
@@ -76,10 +77,12 @@ function Install-WhisperX {
     conda create --prefix "$CWD\whisperx" python=3.10 -y
     conda activate "$CWD\whisperx"
     conda install -y pytorch==2.0.0 torchaudio==2.0.0 pytorch-cuda=11.8 -c pytorch -c nvidia
-    pip install whisperx ffmpeg python-ffmpeg ffmpeg-python coloredlogs halo
-    pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121 --force-reinstall --no-cache-dir
+    pip install --upgrade pip  # Upgrade pip to ensure compatibility
+    # The following command is to solve the issue appearing in https://github.com/m-bain/whisperX/issues/983
+    pip install torch torchaudio --index-url "https://download.pytorch.org/whl/cu121" --force-reinstall --no-cache-dir
 }
 
+# The following function exists to solve the issue appearing in https://github.com/m-bain/whisperX/issues/983
 function Install-Cudnn {
     Write-Host "Installing CUDNN..."
     $outputFile = Join-Path -Path $CWD -ChildPath "cudnn-windows-x86_64-8.9.7.29_cuda12-archive.zip"
@@ -114,7 +117,7 @@ function Install-Cudnn {
         return $true
     }
     catch {
-        Write-Host "Error installing CUDNN: $_"
+        Write-Error "Error installing CUDNN: $_"
         return $false
     }
 }
@@ -132,7 +135,7 @@ function Main {
             Write-Host "Failed to install Conda. Exiting..."
             exit 1
         }
-        Write-Host "Please restart your shell to complete Conda installation."
+        Write-Error "Please restart your shell to complete Conda installation."
         exit 0
     }
 
