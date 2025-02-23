@@ -412,7 +412,12 @@ def main():
         subtitles: str = post_process(subtitles=subtitles_raw)
 
         # Write subtitles to file
-
+        write_subtitles(
+            subtitles=subtitles,
+            file_name=file_name,
+            input_media_path=input_media_path,
+            language=language,
+        )
         stopwatch.stop(file_name)
 
     # Print summary of processing times
