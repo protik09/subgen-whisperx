@@ -149,7 +149,7 @@ def extract_audio(video_path: str = DEFAULT_INPUT_VIDEO) -> str:
     return extracted_audio_path
 
 
-@Halo(text="Transcribing....", text_color="green", spinner="dots", placement="right")
+# @Halo(text="Transcribing....", text_color="green", spinner="dots", placement="right")
 def transcribe(
     audio_path: str,
     device: str,
