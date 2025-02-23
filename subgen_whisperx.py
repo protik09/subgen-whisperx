@@ -1,13 +1,11 @@
 import sys
 import os
 import ffmpeg
-import whisperx
 import utils.timer as timer
 import logging
 import coloredlogs
 from datetime import datetime
 from typing import Dict, Tuple, List
-from torch import cuda
 from utils.constants import DEFAULT_INPUT_VIDEO, MODELS_AVAILABLE
 import argparse
 from halo import Halo
@@ -28,23 +26,9 @@ stopwatch: timer.Timer = timer.Timer(LOGGING_LEVEL[0])
 
 def get_device(device_selection: str = None) -> str:
     """Determine the best available device with graceful fallback"""
+    from torch import cuda
+
     logger = logging.getLogger("get_device")
-    # Check if an nVidia card is available
-    # If nvida-smi is not available, it will fall back to CPU
-    # if os.system("nvidia-smi") == 0:
-    #     logger.info("nVidia GPU detected.")
-    #     if cuda.is_available():
-    #         logger.info("CUDA available.")
-    #         return "cuda"
-    #     else:
-    #         logger.warning("CUDA is not accessible on your nVidia GPU.")
-    #         logger.warning(
-    #             "Please refer to the CUDNN and CUDA installation guide at https://developer.nvidia.com/cudnn and https://developer.nvidia.com/cuda-downloads."
-    #         )
-    #         logger.warning("Using CPU instead.")
-    #         return "cpu"
-    # else:
-    #     logger.info("nVidia GPU not available.")
 
     if device_selection is None or "cuda" in device_selection.lower():
         try:
@@ -164,24 +148,81 @@ def extract_audio(video_path: str = DEFAULT_INPUT_VIDEO) -> str:
     stopwatch.stop("Audio Extraction")
     return extracted_audio_path
 
+
 @Halo(text="Transcribing....", text_color="green", spinner="dots", placement="right")
-def transcribe(audio_path: str, device: str, model_size: str) -> Dict:
+def transcribe(
+    audio_path: str,
+    device: str,
+    model_size: str,
+    print_progress: bool = False,
+    language: str = None,
+    num_threads: int = None,
+) -> Dict:
+    """
+    Transcribes audio file using WhisperX model and aligns timestamps.
+    It handles model loading, transcription, and alignment in one workflow.
+    Args:
+        audio_path (str): Path to the audio file to transcribe
+        device (str): Device to run inference on ('cuda' or 'cpu')
+        model_size (str): Size of the Whisper model to use (e.g. 'tiny', 'base', 'small', 'medium', 'large')
+        print_progress (bool, optional): Whether to print progress during transcription. Defaults to False.
+        language (str, optional): Language code for transcription. If None, auto-detects language. Defaults to None.
+        num_threads (int, optional): Number of CPU threads to use. If None, uses all available threads. Defaults to None.
+    Returns:
+        Dict: A tuple containing:
+            - language (str): Detected or specified language code
+            - segments (list): List of transcribed segments with aligned timestamps.
+                              Each segment is a dict containing:
+                              - 'start': Start time in seconds
+                              - 'end': End time in seconds
+                              - 'text': Transcribed text
+    Notes:
+        - Uses int8 quantization for compute optimization
+        - Automatically detects language if not specified
+    """
+    import whisperx
+
     logger = logging.getLogger("transcribe")
     stopwatch.start("Transcription")
 
+    # Set number of threads for transcription
+    threads_available = os.cpu_count()
+    if num_threads is None or num_threads < 1 or num_threads > threads_available:
+        num_threads = threads_available
+
     # Load model
-    model = whisperx.load_model(model_size, device, compute_type="int8")
+    model = whisperx.load_model(
+        model_size,
+        language,
+        device,
+        compute_type="int8",
+        print_progress=print_progress,
+        num_threads=num_threads,
+    )
 
     # Initial transcription
-    initial_result = model.transcribe(audio_path, batch_size=16)
+    initial_result = model.transcribe(
+        audio_path,
+        batch_size=16,
+        print_progress=print_progress,
+        num_threads=num_threads,
+    )
 
     # Store language before alignment
-    language = initial_result["language"]
+    if language is None:
+        language = initial_result["language"]
 
     # Align timestamps
-    model_a, metadata = whisperx.load_align_model(language_code=language, device=device)
+    model_a, metadata = whisperx.load_align_model(
+        language_code=language, device=device, print_progress=print_progress
+    )
     aligned_result = whisperx.align(
-        initial_result["segments"], model_a, metadata, audio_path, device
+        transcript=initial_result["segments"],
+        model=model_a,
+        align_model_metadata=metadata,
+        audio=audio_path,
+        device=device,
+        print_progress=print_progress,
     )
 
     # Get aligned segments
@@ -199,18 +240,18 @@ def transcribe(audio_path: str, device: str, model_size: str) -> Dict:
 
 def generate_subtitles(segments: Dict) -> str:
     logger = logging.getLogger("generate_subtitles")
-    srt_content = []
+    _srt_content = []
     for i, segment in enumerate(segments, start=1):
         segment_start = timer.Timer.format_time(segment["start"])
         segment_end = timer.Timer.format_time(segment["end"])
         text = segment["text"].strip()
 
         # SRT format: [segment number] [start] --> [end] [text]
-        srt_content.append(f"{os.linesep}{i}")
-        srt_content.append(f"{segment_start} --> {segment_end}")
-        srt_content.append(f"{text}{os.linesep}")
+        _srt_content.append(f"{os.linesep}{i}")
+        _srt_content.append(f"{segment_start} --> {segment_end}")
+        _srt_content.append(f"{text}{os.linesep}")
 
-    return f"{os.linesep}".join(srt_content)
+    return f"{os.linesep}".join(_srt_content)
 
 
 def post_process(subtitles: str) -> str:
@@ -225,7 +266,7 @@ def post_process(subtitles: str) -> str:
     """
 
     # Clip lines that go over 150 characters taking into account word boundaries
-    subtitles_clean: str = ""
+    _subtitles_clean: str = ""
     for line in subtitles:
         if len(line) > 150:
             try:
@@ -238,9 +279,32 @@ def post_process(subtitles: str) -> str:
         else:
             pass
 
-        subtitles_clean += line
+        _subtitles_clean += line
 
-    return subtitles_clean
+    return _subtitles_clean
+
+
+def write_subtitles(
+    subtitles: str, file_name: str, input_media_path: str, language: str
+) -> None:
+    """Write the generated subtitles to a file.
+    Args:
+        subtitles (str): The generated subtitles as a single string
+        output_path (str): The path to write the subtitles to
+        language (str): The language for subtitles
+    """
+    logger = logging.getLogger("write_subtitles")
+    # The following should generate something like "input.ai.srt" from "input.mp4"
+    _subtitle_file_name = f"{file_name}.ai-{language}.srt"
+
+    # Write subtitles to file
+    subtitle_path = os.path.join(os.path.dirname(input_media_path), _subtitle_file_name)
+    try:
+        with open(subtitle_path, "w", encoding="utf-8") as f:
+            f.write(subtitles)
+            logger.info(f"Subtitle file generated: {_subtitle_file_name}")
+    except Exception as e:
+        logger.error(f"An error occurred while writing the subtitle file: {e}")
 
 
 def main():
@@ -274,11 +338,23 @@ def main():
         help="Whisper model size to use for transcription",
     )
     parser.add_argument(
-        "-l",
-        "--log-level",
+        "-log",
+        "--log_level",
         default="ERROR",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        help="Set the logging level",
+        help="Set the logging level (default: ERROR)",
+    )
+    parser.add_argument(
+        "-l",
+        "--language",
+        default=None,
+        help="Set the language for subtitles",
+    )
+    parser.add_argument(
+        "-n",
+        "--num_threads",
+        default=None,
+        help="Set the number of threads for transcription",
     )
     args = parser.parse_args()
 
@@ -289,8 +365,8 @@ def main():
 
     # If no args are passed to argparser, print help and exit
     if len(sys.argv) == 1:
-        parser.print_help(sys.stderr)
-        sys.exit(1)
+        parser.print_help(sys.stdout)
+        sys.exit()
 
     # Check that args.directory is a valid directory only if specified in the arguments
     if args.directory and not os.path.isdir(args.directory):
@@ -325,6 +401,8 @@ def main():
             audio_path=audio_path,
             device=get_device(args.compute_device.lower()),
             model_size=args.model_size.lower(),
+            language=args.language,
+            num_threads=args.num_threads,
         )
 
         # Generate unprocessed raw subtitles
@@ -333,19 +411,8 @@ def main():
         # Post-process subtitles
         subtitles: str = post_process(subtitles=subtitles_raw)
 
-        # The following should generate something like "input.ai.srt" from "input.mp4"
-        subtitle_file_name = f"{file_name}.ai-{language}.srt"
-
         # Write subtitles to file
-        subtitle_path = os.path.join(
-            os.path.dirname(input_media_path), subtitle_file_name
-        )
-        try:
-            with open(subtitle_path, "w", encoding="utf-8") as f:
-                f.write(subtitles)
-                logger.info(f"Subtitle file generated: {subtitle_file_name}")
-        except Exception as e:
-            logger.error(f"An error occurred while writing the subtitle file: {e}")
+
         stopwatch.stop(file_name)
 
     # Print summary of processing times
