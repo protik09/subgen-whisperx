@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Dict, Tuple, List
 from utils.constants import DEFAULT_INPUT_VIDEO, MODELS_AVAILABLE
 import argparse
-from halo import Halo
+# from halo import Halo
 
 # Setup logging
 log_dir = "logs"
@@ -16,12 +16,12 @@ os.makedirs(log_dir, exist_ok=True)
 log_filename = os.path.join(
     log_dir, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_subgen.log"
 )
-LOGGING_LEVEL = ["ERROR", logging.ERROR]
-logging.basicConfig(filename=log_filename, filemode="a", level=LOGGING_LEVEL[1])
-coloredlogs.install(level=LOGGING_LEVEL[0])
+LOGGING_LEVEL = logging.ERROR
+logging.basicConfig(filename=log_filename, filemode="a", level=LOGGING_LEVEL)
+coloredlogs.install(level="DEBUG")
 
 # Init global timer
-stopwatch: timer.Timer = timer.Timer(LOGGING_LEVEL[0])
+stopwatch: timer.Timer = timer.Timer("DEBUG")
 
 
 def get_device(device_selection: str = None) -> str:
@@ -192,20 +192,18 @@ def transcribe(
 
     # Load model
     model = whisperx.load_model(
-        model_size,
-        language,
-        device,
+        whisper_arch=model_size,
+        device=device,
         compute_type="int8",
-        print_progress=print_progress,
-        num_threads=num_threads,
+        language=language,
+        threads=num_threads,
     )
 
     # Initial transcription
     initial_result = model.transcribe(
-        audio_path,
+        audio=audio_path,
         batch_size=16,
         print_progress=print_progress,
-        num_threads=num_threads,
     )
 
     # Store language before alignment
@@ -214,7 +212,7 @@ def transcribe(
 
     # Align timestamps
     model_a, metadata = whisperx.load_align_model(
-        language_code=language, device=device, print_progress=print_progress
+        language_code=language, device=device,
     )
     aligned_result = whisperx.align(
         transcript=initial_result["segments"],
@@ -362,6 +360,8 @@ def main():
     logging_level = getattr(logging, args.log_level.upper(), logging.DEBUG)
     logging.getLogger().setLevel(logging_level)
     coloredlogs.install(level=logging_level)
+    # Set print_prgress flag depending on logging level
+    print_progress = logging_level <= logging.INFO
 
     # If no args are passed to argparser, print help and exit
     if len(sys.argv) == 1:
@@ -403,6 +403,7 @@ def main():
             model_size=args.model_size.lower(),
             language=args.language,
             num_threads=args.num_threads,
+            print_progress=bool(print_progress),
         )
 
         # Generate unprocessed raw subtitles
