@@ -1,6 +1,7 @@
 # Ignore Python virtual environments
 .venv/
 venv/
+whisperx/
 
 # Ignore Python cache files
 __pycache__/
