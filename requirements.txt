@@ -2,7 +2,7 @@ whisperx
 ffmpeg
 ffmpeg-python
 python-ffmpeg 
-tiktoken
+# tiktoken
 torch
 coloredlogs
 halo

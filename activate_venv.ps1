@@ -78,6 +78,7 @@ function Install-WhisperX {
     conda activate "$CWD\whisperx"
     conda install -y pytorch==2.0.0 torchaudio==2.0.0 pytorch-cuda=11.8 -c pytorch -c nvidia
     pip install --upgrade pip  # Upgrade pip to ensure compatibility
+    pip install -r requirements.txt
     # The following command is to solve the issue appearing in https://github.com/m-bain/whisperX/issues/983
     pip install torch torchaudio --index-url "https://download.pytorch.org/whl/cu121" --force-reinstall --no-cache-dir
 }
@@ -85,19 +86,19 @@ function Install-WhisperX {
 # The following function exists to solve the issue appearing in https://github.com/m-bain/whisperX/issues/983
 function Install-Cudnn {
     Write-Host "Installing CUDNN..."
-    $outputFile = Join-Path -Path $CWD -ChildPath "cudnn-windows-x86_64-8.9.7.29_cuda12-archive.zip"
+    $OUTPUTFILE = Join-Path -Path $CWD -ChildPath "cudnn-windows-x86_64-8.9.7.29_cuda12-archive.zip"
 
     # If the .zip file already exists, use it; otherwise, download it.
-    if (Test-Path $outputFile) {
-        Write-Host "The .zip file already exists: $outputFile"
+    if (Test-Path $OUTPUTFILE) {
+        Write-Host "The .zip file already exists: $OUTPUTFILE"
     }
     else {
         Write-Host "Downloading CUDNN from $($config.CudnnUrl)..."
-        Invoke-WebRequest -Uri $config.CudnnUrl -OutFile $outputFile
+        Invoke-WebRequest -Uri $config.CudnnUrl -OutFile $OUTPUTFILE
     }
 
     try {
-        Expand-Archive -Path $outputFile -DestinationPath "$CWD\cudnn" -Force
+        Expand-Archive -Path $OUTPUTFILE -DestinationPath "$CWD\cudnn" -Force
         $cudnn_files = Get-ChildItem -Path "$CWD\cudnn\cudnn-windows-x86_64-8.9.7.29_cuda12-archive\bin" -Recurse -Filter "cudnn*.dll"
         
         # Define the local destination path in the local environment
@@ -114,6 +115,7 @@ function Install-Cudnn {
 
         # Cleanup: remove the temporary extraction folder
         Remove-Item -Path "$CWD\cudnn" -Recurse -Force
+        Remove-Item -Path "$OUTPUTFILE" -Force
         return $true
     }
     catch {
