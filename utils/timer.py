@@ -79,7 +79,7 @@ class Timer:
                 # Invalid timer state
                 self.logger.error(f"Invalid timer state for '{name}'")
                 continue
-                
+
             total += duration
             self.logger.info(f"{name}: {self.format_time(duration).replace(',', '.')}s")
         self.logger.info(f"Total time: {self.format_time(total).replace(',', '.')}s")

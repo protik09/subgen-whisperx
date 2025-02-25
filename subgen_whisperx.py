@@ -458,47 +458,50 @@ def main():
         return
 
     # Process each media file
-    for media_file in media_files:
-        input_media_path = media_file[0]
-        audio_flag = media_file[1]
-        file_name = str(os.path.basename(input_media_path.rsplit(".", 1)[0]))
-        stopwatch.start(file_name)
+    try:
+        for media_file in media_files:
+            input_media_path = media_file[0]
+            audio_flag = media_file[1]
+            file_name = str(os.path.basename(input_media_path.rsplit(".", 1)[0]))
+            stopwatch.start(file_name)
 
-        # Extract Audio
-        if not audio_flag:
-            logger.info(f"Processing video file: {input_media_path}")
-            audio_path: str = extract_audio(video_path=input_media_path)
-        else:
-            logger.info(f"Processing audio file: {input_media_path}")
-            audio_path = input_media_path
+            # Extract Audio
+            if not audio_flag:
+                logger.info(f"Processing video file: {input_media_path}")
+                audio_path: str = extract_audio(video_path=input_media_path)
+            else:
+                logger.info(f"Processing audio file: {input_media_path}")
+                audio_path = input_media_path
 
-        # Get model size
-        model_size = get_model(model_size=args.model_size, language=args.language)
+            # Get model size
+            model_size = get_model(model_size=args.model_size, language=args.language)
 
-        # Transcribe audio
-        language, segments = get_transcription(
-            audio_path=audio_path,
-            device=get_device(args.compute_device.lower()),
-            model_size=model_size,
-            language=args.language,
-            num_threads=args.num_threads,
-            print_progress=bool(print_progress),
-        )
+            # Transcribe audio
+            language, segments = get_transcription(
+                audio_path=audio_path,
+                device=get_device(args.compute_device.lower()),
+                model_size=model_size,
+                language=args.language,
+                num_threads=args.num_threads,
+                print_progress=bool(print_progress),
+            )
 
-        # Generate unprocessed raw subtitles
-        subtitles_raw: str = generate_subtitles(segments=segments)
+            # Generate unprocessed raw subtitles
+            subtitles_raw: str = generate_subtitles(segments=segments)
 
-        # Post-process subtitles
-        subtitles: str = post_process(subtitles=subtitles_raw)
+            # Post-process subtitles
+            subtitles: str = post_process(subtitles=subtitles_raw)
 
-        # Write subtitles to file
-        write_subtitles(
-            subtitles=subtitles,
-            file_name=file_name,
-            input_media_path=input_media_path,
-            language=language,
-        )
-        stopwatch.stop(file_name)
+            # Write subtitles to file
+            write_subtitles(
+                subtitles=subtitles,
+                file_name=file_name,
+                input_media_path=input_media_path,
+                language=language,
+            )
+            stopwatch.stop(file_name)
+    except Exception as e:
+        logger.error(f"An error occurred during processing: {e}")
 
     # Print summary of processing times
     stopwatch.summary()
