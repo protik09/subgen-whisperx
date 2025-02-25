@@ -300,10 +300,10 @@ def generate_subtitles(segments: Dict) -> str:
         segment_end = timer.Timer.format_time(segment["end"])
         text = segment["text"].strip()
 
-        # SRT format: [segment number] [start] --> [end] [text]
-        _srt_content.append(f"{i}")
+        # SRT format: [segment number]\n[start] --> [end]\n[text]\n
+        _srt_content.append(f"\n{os.linesep}{i}")
         _srt_content.append(f"{segment_start} --> {segment_end}")
-        _srt_content.append(f"{text}{os.linesep}")
+        _srt_content.append(f"{text}")
 
     return f"{os.linesep}".join(_srt_content)
 
@@ -332,7 +332,6 @@ def post_process(subtitles: str) -> str:
                 line = line[:150]
         else:
             pass
-
         _subtitles_clean += line
 
     # Make legal SRT from the generated subtitles
@@ -344,7 +343,7 @@ def post_process(subtitles: str) -> str:
         )
         _subtitles_clean = ""
 
-    return _subtitles_clean
+    return _subtitles_clean.lstrip()
 
 
 def write_subtitles(
