@@ -5,9 +5,10 @@ import utils.timer as timer
 import logging
 import coloredlogs
 from datetime import datetime
-from typing import Dict, Tuple, List
+from typing import Union, Dict, List, Tuple
 from utils.constants import DEFAULT_INPUT_VIDEO, MODELS_AVAILABLE
 import argparse
+import srt
 # from halo import Halo
 
 # Setup logging
@@ -24,7 +25,7 @@ coloredlogs.install(level="DEBUG")
 stopwatch: timer.Timer = timer.Timer("DEBUG")
 
 
-def get_device(device_selection: str = None) -> str:
+def get_device(device_selection: str | None = None) -> str:
     """Determine the best available device with graceful fallback"""
     from torch import cuda
 
@@ -42,14 +43,62 @@ def get_device(device_selection: str = None) -> str:
             logger.warning("Falling back to CPU.")
     else:
         pass
+
     return "cpu"
 
 
+def get_model(model_size: str | None = None, language: str | None = None) -> str:
+    """Select the model based on size and language."""
+    from torch import cuda
+
+    logger = logging.getLogger("get_model")
+
+    if model_size not in MODELS_AVAILABLE:
+        logger.error(f"Model size '{model_size}' is not available.")
+        raise ValueError(
+            f"Model size '{model_size}' is not valid. Available models: {MODELS_AVAILABLE}"
+        )
+    if model_size is None:
+        # Check to see how much VRAM is available on your GPU and select the model accordingly
+        if cuda.is_available():
+            vram_gb = round(
+                (cuda.get_device_properties(0).total_memory / 1.073742e9), 1
+            )
+            logger.debug(f"Detected VRAM: {vram_gb} GB")
+            if vram_gb >= 9.0:
+                model_size = "large-v2"
+            elif vram_gb >= 7.5:
+                model_size = "medium"
+            elif vram_gb >= 4.5:
+                model_size = "small.en" if language == "en" else "small"
+            elif vram_gb >= 3.5:
+                model_size = "small.en" if language == "en" else "small"
+            elif vram_gb >= 2.5:
+                model_size = "base.en" if language == "en" else "base"
+            else:
+                model_size = "tiny.en" if language == "en" else "tiny"
+        else:
+            model_size = "tiny"  # Fallback if no GPU is available
+    else:
+        model_size = model_size
+
+    logger.info(f"Selected model size: {model_size} for language: {language}")
+    return model_size
+
+
 # Function to check if media file is valid
-def is_media_file(file_path):
+def is_media_file(file_path: str) -> Tuple[bool, bool]:
+    """Check if a file is a valid media file.
+
+    Args:
+        file_path (str): Path to the file to check
+
+    Returns:
+        Tuple[bool, bool]: Tuple containing (is_valid_media, is_audio_only)
+    """
     logger = logging.getLogger("is_media_file")
-    _valid_media_flag = False
-    _valid_audio_flag = False
+    _valid_media_flag: bool = False
+    _valid_audio_flag: bool = False
     try:
         probe = ffmpeg.probe(file_path)
         # Check whether a media stream exists in the file
@@ -150,14 +199,14 @@ def extract_audio(video_path: str = DEFAULT_INPUT_VIDEO) -> str:
 
 
 # @Halo(text="Transcribing....", text_color="green", spinner="dots", placement="right")
-def transcribe(
+def get_transcription(
     audio_path: str,
     device: str,
     model_size: str,
     print_progress: bool = False,
     language: str = None,
     num_threads: int = None,
-) -> Dict:
+) -> Tuple[str, List[Dict[str, Union[float, str]]]]:
     """
     Transcribes audio file using WhisperX model and aligns timestamps.
     It handles model loading, transcription, and alignment in one workflow.
@@ -169,7 +218,7 @@ def transcribe(
         language (str, optional): Language code for transcription. If None, auto-detects language. Defaults to None.
         num_threads (int, optional): Number of CPU threads to use. If None, uses all available threads. Defaults to None.
     Returns:
-        Dict: A tuple containing:
+        Tuple[str, List[Dict[str, Union[float, str]]]]: A tuple containing:
             - language (str): Detected or specified language code
             - segments (list): List of transcribed segments with aligned timestamps.
                               Each segment is a dict containing:
@@ -186,7 +235,7 @@ def transcribe(
     stopwatch.start("Transcription")
 
     # Set number of threads for transcription
-    threads_available = os.cpu_count()
+    threads_available: int = os.cpu_count()
     if num_threads is None or num_threads < 1 or num_threads > threads_available:
         num_threads = threads_available
 
@@ -200,7 +249,7 @@ def transcribe(
     )
 
     # Initial transcription
-    initial_result = model.transcribe(
+    initial_result: Dict = model.transcribe(
         audio=audio_path,
         batch_size=16,
         print_progress=print_progress,
@@ -212,9 +261,10 @@ def transcribe(
 
     # Align timestamps
     model_a, metadata = whisperx.load_align_model(
-        language_code=language, device=device,
+        language_code=language,
+        device=device,
     )
-    aligned_result = whisperx.align(
+    aligned_result: Dict = whisperx.align(
         transcript=initial_result["segments"],
         model=model_a,
         align_model_metadata=metadata,
@@ -224,13 +274,19 @@ def transcribe(
     )
 
     # Get aligned segments
-    segments = aligned_result["segments"]
+    segments: List[Dict[str, Union[float, str]]] = aligned_result["segments"]
 
     logger.info(f"Language: {language}")
     for segment in segments:
         logger.debug(
             f"[{segment['start']:.2f}s -> {segment['end']:.2f}s] {segment['text']}"
         )
+
+    # Delete audio file only if orginal file was a video after transcription
+    # try:
+    #     os.remove(audio_path)
+    # except Exception as e:
+    #     logger.error(f"An error occurred while deleting audio file: {e}")
 
     stopwatch.stop("Transcription")
     return language, segments
@@ -245,7 +301,7 @@ def generate_subtitles(segments: Dict) -> str:
         text = segment["text"].strip()
 
         # SRT format: [segment number] [start] --> [end] [text]
-        _srt_content.append(f"{os.linesep}{i}")
+        _srt_content.append(f"{i}")
         _srt_content.append(f"{segment_start} --> {segment_end}")
         _srt_content.append(f"{text}{os.linesep}")
 
@@ -278,6 +334,15 @@ def post_process(subtitles: str) -> str:
             pass
 
         _subtitles_clean += line
+
+    # Make legal SRT from the generated subtitles
+    try:
+        _subtitles_clean = srt.make_legal_content(_subtitles_clean)
+    except Exception as e:
+        logger.error(
+            f"An error occurred while parsing SRT. No subtitles will be written to file: {e}"
+        )
+        _subtitles_clean = ""
 
     return _subtitles_clean
 
@@ -331,9 +396,9 @@ def main():
     parser.add_argument(
         "-m",
         "--model_size",
-        default="base.en",
+        default=None,
         choices=MODELS_AVAILABLE,
-        help="Whisper model size to use for transcription",
+        help="Whisper model size to use for transcription (default: auto-select based on VRAM)",
     )
     parser.add_argument(
         "-log",
@@ -396,11 +461,14 @@ def main():
             logger.info(f"Processing audio file: {input_media_path}")
             audio_path = input_media_path
 
+        # Get model size
+        model_size = get_model(model_size=args.model_size, language=args.language)
+
         # Transcribe audio
-        language, segments = transcribe(
+        language, segments = get_transcription(
             audio_path=audio_path,
             device=get_device(args.compute_device.lower()),
-            model_size=args.model_size.lower(),
+            model_size=model_size,
             language=args.language,
             num_threads=args.num_threads,
             print_progress=bool(print_progress),
