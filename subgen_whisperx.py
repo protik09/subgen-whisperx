@@ -239,6 +239,7 @@ def get_transcription(
     """
     import torch
     import whisperx
+    import gc
 
     logger = logging.getLogger("transcribe")
     stopwatch.start("Transcription")
@@ -263,7 +264,10 @@ def get_transcription(
         batch_size=16,
         print_progress=print_progress,
     )
-
+    # Try and free GPU memory for next model load
+    del model
+    torch.cuda.empty_cache()
+    gc.collect()
     # Store language before alignment
     if language is None:
         language = initial_result["language"]
@@ -283,7 +287,9 @@ def get_transcription(
     )
 
     # Delete CUDA cache
+    del model_a
     torch.cuda.empty_cache()
+    gc.collect()
 
     # Get aligned segments
     segments: List[Dict[str, Union[float, str]]] = aligned_result["segments"]
