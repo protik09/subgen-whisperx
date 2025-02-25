@@ -101,7 +101,11 @@ def is_media_file(file_path: str) -> Tuple[bool, bool]:
     _valid_audio_flag: bool = False
     try:
         # This weird thing exists because ffmpeg.probe() shows a text file as a valid video file
-        probe = ffmpeg.probe(file_path) if os.path.split(file_path)[1].split(".")[-1] != "txt" else None
+        probe = (
+            ffmpeg.probe(file_path)
+            if os.path.split(file_path)[1].split(".")[-1] != "txt"
+            else None
+        )
         # Ensure probe is not None before proceeding
         if probe and len(probe["streams"]) > 0:
             stream_type: str = probe["streams"][0]["codec_type"]
@@ -109,7 +113,9 @@ def is_media_file(file_path: str) -> Tuple[bool, bool]:
                 _valid_media_flag = True
                 if stream_type == "audio":
                     _valid_audio_flag = True
-        logger.debug(f"File: {file_path}, Valid Media: {_valid_media_flag}, Audio Only: {_valid_audio_flag}")
+        logger.debug(
+            f"File: {file_path}, Valid Media: {_valid_media_flag}, Audio Only: {_valid_audio_flag}"
+        )
         return _valid_media_flag, _valid_audio_flag
     except Exception as e:
         logger.error(f"An error occurred while probing the file: {e}")
@@ -231,6 +237,7 @@ def get_transcription(
         - Uses int8 quantization for compute optimization
         - Automatically detects language if not specified
     """
+    import torch
     import whisperx
 
     logger = logging.getLogger("transcribe")
@@ -274,6 +281,9 @@ def get_transcription(
         device=device,
         print_progress=print_progress,
     )
+
+    # Delete CUDA cache
+    torch.cuda.empty_cache()
 
     # Get aligned segments
     segments: List[Dict[str, Union[float, str]]] = aligned_result["segments"]
