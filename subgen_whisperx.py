@@ -100,14 +100,16 @@ def is_media_file(file_path: str) -> Tuple[bool, bool]:
     _valid_media_flag: bool = False
     _valid_audio_flag: bool = False
     try:
-        probe = ffmpeg.probe(file_path)
-        # Check whether a media stream exists in the file
-        if len(probe["streams"]) > 0:
+        # This weird thing exists because ffmpeg.probe() shows a text file as a valid video file
+        probe = ffmpeg.probe(file_path) if os.path.split(file_path)[1].split(".")[-1] != "txt" else None
+        # Ensure probe is not None before proceeding
+        if probe and len(probe["streams"]) > 0:
             stream_type: str = probe["streams"][0]["codec_type"]
             if stream_type == "audio" or stream_type == "video":
                 _valid_media_flag = True
                 if stream_type == "audio":
                     _valid_audio_flag = True
+        logger.debug(f"File: {file_path}, Valid Media: {_valid_media_flag}, Audio Only: {_valid_audio_flag}")
         return _valid_media_flag, _valid_audio_flag
     except Exception as e:
         logger.error(f"An error occurred while probing the file: {e}")
