@@ -35,6 +35,11 @@ Thumbs.db
 # Ignore debug assets
 assets/
 build/
+**/*.ipynb
+*.csv
+whisperx-online.py
+whisperx-online.ipynb
+nvapi.ipynb
 
 # ignore repomix output
 repomix-output.txt
