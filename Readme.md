@@ -119,9 +119,15 @@ The script generates SRT subtitle files in the same directory as the input media
 - Format: `filename.ai-{language}.srt`
 - Example: `Meetings-0822.ai-en.srt` for a video called `Meetings-0822.mp4`
 
+## Troubleshooting
+
+If the automatic model selection leads to the CUDA Out of Memory Issue, just manually select 
+the next smaller model using the `-m` flag.
+
 ## Performance
 
 - GPU acceleration provides significantly faster processing
+- There is CPU fallback if GPU access fails
 - Progress indicators show real-time status
 - Performance timing information displayed after completion
 
