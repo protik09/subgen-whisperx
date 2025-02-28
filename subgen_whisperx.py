@@ -11,7 +11,7 @@ import ffmpeg
 import srt  # TODO: Remove dependency in future update
 
 import utils.timer as timer
-from utils.constants import MEDIA_EXTENSIONS, MODELS_AVAILABLE
+from utils.constants import MEDIA_EXTENSIONS, MODELS_AVAILABLE, WHISPER_LANGUAGE
 
 # Setup logging
 log_dir = "logs"
@@ -479,15 +479,23 @@ def main():
     # Check that args.directory is a valid directory only if specified in the arguments
     if args.directory and not os.path.isdir(args.directory):
         logger.error(f"Error: Directory '{args.directory}' does not exist.")
-        return
+        raise FileNotFoundError
     # Check that args.file is a valid file only if specified in the arguments
     if args.file and not os.path.isfile(args.file):
         logger.error(f"Error: File '{args.file}' does not exist.")
-        return
+        raise FileNotFoundError
 
     media_files = get_media_files(args.directory, args.file)
     if not media_files:
-        return
+        logger.error("No media files found in the path provided")
+        raise FileNotFoundError
+
+    # Check that the language flag passed is compatible with Whisper
+    if args.language and args.laguage not in WHISPER_LANGUAGE:
+        logger.error(
+            f"The language code {args.language} is not a valid ISO 639-1 code supported by Whisper"
+        )
+        raise KeyError
 
     # Process each media file
     try:

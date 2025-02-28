@@ -18,6 +18,18 @@ MODELS_AVAILABLE: Set[str | None] = {
     "large-v3",
 }
 
+WHISPER_LANGUAGE: Set[str] = {
+    "af", "am", "ar", "as", "az", "ba", "be", "bg", "bn", "bo", "br", "bs", "ca",
+    "cs", "cy", "da", "de", "el", "en", "eo", "es", "et", "eu", "fa", "fi", "fo",
+    "fr", "gl", "gu", "ha", "he", "hi", "hr", "ht", "hu", "hy", "id", "is", "it",
+    "ja", "jv", "ka", "kk", "km", "kn", "ko", "la", "lb", "ln", "lo", "lt", "lv",
+    "mg", "mk", "ml", "mn", "mr", "ms", "mt", "my", "ne", "nl", "nn", "no", "oc",
+    "pa", "pl", "ps", "pt", "ro", "ru", "sa", "sd", "si", "sk", "sl", "sn", "so",
+    "sq", "sr", "su", "sv", "sw", "ta", "te", "tg", "th", "tk", "tl", "tr", "tt",
+    "uk", "ur", "uz", "vi", "wo", "xh", "yi", "yo", "zh", "zu"
+}
+
+
 # Comprehensive list of video and audio extensions
 VIDEO_EXTENSIONS: Set[str] = {
     ".mp4",
