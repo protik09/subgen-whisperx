@@ -111,6 +111,7 @@ python subgen_whisperx.py -f video.mp4 -l DEBUG
 | `-c`, `--compute_device` | Device for computation (`cuda` or `cpu`) | Auto-detect |
 | `-m`, `--model_size` | WhisperX model size | `base.en` |
 | `-l`, `--log-level` | Logging level | `ERROR` |
+| `-t-, '--txt' | Text file with fille/folder paths | None |
 
 ## Output
 

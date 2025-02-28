@@ -1,5 +1,4 @@
 # Description: Constants used in the project
-import os
 from typing import Set
 
 

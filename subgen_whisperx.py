@@ -10,6 +10,7 @@ import coloredlogs
 import ffmpeg
 import srt  # TODO: Remove dependency in future update
 
+from utils.exceptions import FolderNotFoundError, MediaNotFoundError
 import utils.timer as timer
 from utils.constants import MEDIA_EXTENSIONS, MODELS_AVAILABLE, WHISPER_LANGUAGE
 
@@ -125,56 +126,69 @@ def is_media_file(file_path: str) -> Tuple[bool, bool]:
 
 
 def get_media_files(
-    directory: str | None = None, file: str | None = None
+    directory: str | None = None, file: str | None = None, txt: str | None = None
 ) -> List[Tuple[str, bool]] | None:
-    """Get list of valid media files from directory and/or single file.
-
-    Args:
-        directory (str, optional): Directory path to search for media files
-        file (str, optional): Single file path to check
-
-    Returns:
-        List[Tuple(str, bool)]: List of tuples containing (file_path, is_audio_flag)
-    """
+    """Get list of valid media files from directory and/or single file."""
     logger = logging.getLogger("get_media_files")
-    potential_media_files: list[str] = []
-    media_files: list[Tuple[str, bool]] = []
-    media_extensions = tuple(
-        MEDIA_EXTENSIONS
-    )  # Convert once so that its not running on every loop
-
-    if directory:
+    media_extensions = tuple(MEDIA_EXTENSIONS)
+    
+    # Use set to prevent duplicates
+    potential_media_files = set()
+    media_files: List[Tuple[str, bool]] = []
+    
+    # Collect all potential media files
+    if file and os.path.isfile(file):
+        potential_media_files.add(file)
+        
+    if directory and os.path.isdir(directory):
         for root, _, files in os.walk(directory):
             for f in files:
-                file_path = os.path.join(root, f)
                 if f.endswith(media_extensions):
-                    potential_media_files.append(file_path)
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future_ffprobe = []
-            for file in potential_media_files:
-                future_ffprobe.append(executor.submit(is_media_file, file))
-            for future in concurrent.futures.as_completed(future_ffprobe):
-                is_valid, is_audio = future.result()
-                if is_valid:
-                    media_files.append((file, is_audio))
-                else:
-                    logger.error(f"Error: File '{file}' is not a valid media file.")
-                    return None
-
-        logger.debug(f"Valid media files, discovered are{media_files}")
+                    potential_media_files.add(os.path.join(root, f))
+                    
+    if txt and os.path.isfile(txt):
+        try:
+            with open(txt, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if os.path.isfile(line):
+                        potential_media_files.add(line)
+                    elif os.path.isdir(line):
+                        for root, _, files in os.walk(line):
+                            for f in files:
+                                if f.endswith(media_extensions):
+                                    potential_media_files.add(os.path.join(root, f))
+        except Exception as e:
+            logger.error(f"An error occurred while reading the txt file: {e}")
+            raise
 
     if not potential_media_files:
-        logger.error(f"No valid media files found in directory '{directory}'")
+        logger.error("No potential media files found")
         return None
 
-    if file:
-        is_valid, is_audio = is_media_file(file)
-        if is_valid:
-            media_files.append((file, is_audio))
-        else:
-            logger.error(f"Error: File '{file}' is not a valid media file.")
-            return None
+    # Validate files concurrently
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        future_to_file = {
+            executor.submit(is_media_file, file_path): file_path 
+            for file_path in potential_media_files
+        }
+        
+        for future in concurrent.futures.as_completed(future_to_file):
+            file_path = future_to_file[future]
+            try:
+                is_valid, is_audio = future.result()
+                if is_valid:
+                    media_files.append((file_path, is_audio))
+                else:
+                    logger.warning(f"Skipping invalid media file: '{file_path}'")
+            except Exception as e:
+                logger.error(f"Validation failed for {file_path}: {e}")
 
+    if not media_files:
+        logger.error("No valid media files found")
+        return None
+
+    logger.debug(f"Valid media files discovered: {media_files}")
     return media_files
 
 
@@ -462,6 +476,12 @@ def main():
         default=None,
         help="Set the number of threads for transcription",
     )
+    parser.add_argument(
+        "-t",
+        "--txt",
+        default=None,
+        help="Pass a txt file containing the paths to either media files or directories",
+    )
     args = parser.parse_args()
 
     # Set logging level
@@ -479,23 +499,24 @@ def main():
     # Check that args.directory is a valid directory only if specified in the arguments
     if args.directory and not os.path.isdir(args.directory):
         logger.error(f"Error: Directory '{args.directory}' does not exist.")
-        raise FileNotFoundError
+        raise FolderNotFoundError
     # Check that args.file is a valid file only if specified in the arguments
     if args.file and not os.path.isfile(args.file):
         logger.error(f"Error: File '{args.file}' does not exist.")
         raise FileNotFoundError
 
-    media_files = get_media_files(args.directory, args.file)
-    if not media_files:
-        logger.error("No media files found in the path provided")
-        raise FileNotFoundError
-
     # Check that the language flag passed is compatible with Whisper
-    if args.language and args.laguage not in WHISPER_LANGUAGE:
+    if args.language and args.language not in WHISPER_LANGUAGE:
         logger.error(
             f"The language code {args.language} is not a valid ISO 639-1 code supported by Whisper"
         )
         raise KeyError
+
+    # Get only the media files from the paths given
+    media_files = get_media_files(args.directory, args.file, args.txt)
+    if not media_files:
+        logger.error("No media files found in the path provided")
+        raise MediaNotFoundError
 
     # Process each media file
     try:
