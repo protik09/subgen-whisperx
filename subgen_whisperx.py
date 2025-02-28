@@ -1,15 +1,17 @@
-import sys
-import os
-import ffmpeg
-import utils.timer as timer
-import logging
-import coloredlogs
-from datetime import datetime
-from typing import Union, Dict, List, Tuple
-from utils.constants import DEFAULT_INPUT_VIDEO, MODELS_AVAILABLE
 import argparse
-import srt
-# from halo import Halo
+import concurrent.futures
+import logging
+import os
+import sys
+from datetime import datetime
+from typing import Dict, List, Tuple
+
+import coloredlogs
+import ffmpeg
+import srt  # TODO: Remove dependency in future update
+
+import utils.timer as timer
+from utils.constants import MEDIA_EXTENSIONS, MODELS_AVAILABLE
 
 # Setup logging
 log_dir = "logs"
@@ -122,7 +124,9 @@ def is_media_file(file_path: str) -> Tuple[bool, bool]:
         return False, False
 
 
-def get_media_files(directory: str = None, file: str = None) -> List[Tuple[str, bool]]:
+def get_media_files(
+    directory: str | None = None, file: str | None = None
+) -> List[Tuple[str, bool]] | None:
     """Get list of valid media files from directory and/or single file.
 
     Args:
@@ -130,22 +134,39 @@ def get_media_files(directory: str = None, file: str = None) -> List[Tuple[str, 
         file (str, optional): Single file path to check
 
     Returns:
-        List[Tuple[str, bool]]: List of tuples containing (file_path, is_audio_flag)
+        List[Tuple(str, bool)]: List of tuples containing (file_path, is_audio_flag)
     """
     logger = logging.getLogger("get_media_files")
-    media_files: List[Tuple[str, bool]] = []
+    potential_media_files: list[str] = []
+    media_files: list[Tuple[str, bool]] = []
+    media_extensions = tuple(
+        MEDIA_EXTENSIONS
+    )  # Convert once so that its not running on every loop
 
     if directory:
         for root, _, files in os.walk(directory):
             for f in files:
                 file_path = os.path.join(root, f)
-                is_valid, is_audio = is_media_file(file_path)
+                if f.endswith(media_extensions):
+                    potential_media_files.append(file_path)
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            # media_files = list(filter(None, executor.map(is_media_file, potential_media_files)))
+            future_ffprobe = []
+            for file in potential_media_files:
+                future_ffprobe.append(executor.submit(is_media_file, file))
+            for future in concurrent.futures.as_completed(future_ffprobe):
+                is_valid, is_audio = future.result()
                 if is_valid:
-                    media_files.append((file_path, is_audio))
+                    media_files.append((file, is_audio))
+                else:
+                    logger.error(f"Error: File '{file}' is not a valid media file.")
+                    return None
 
-        if not media_files:
-            logger.error(f"No valid media files found in directory '{directory}'")
-            return None
+        logger.debug(f"Valid media files, discovered are{media_files}")
+
+    if not potential_media_files:
+        logger.error(f"No valid media files found in directory '{directory}'")
+        return None
 
     if file:
         is_valid, is_audio = is_media_file(file)
@@ -158,7 +179,7 @@ def get_media_files(directory: str = None, file: str = None) -> List[Tuple[str, 
     return media_files
 
 
-def extract_audio(video_path: str = DEFAULT_INPUT_VIDEO) -> str:
+def extract_audio(video_path: str = "") -> str:
     """Extract audio from input video file using ffmpeg.
     This function extracts the audio track from the input video file and converts it to MP3 format
     with optimized settings for transcription (mono, 16kHz sample rate). The extraction process
@@ -206,15 +227,14 @@ def extract_audio(video_path: str = DEFAULT_INPUT_VIDEO) -> str:
     return extracted_audio_path
 
 
-# @Halo(text="Transcribing....", text_color="green", spinner="dots", placement="right")
 def get_transcription(
     audio_path: str,
     device: str,
     model_size: str,
     print_progress: bool = False,
-    language: str = None,
-    num_threads: int = None,
-) -> Tuple[str, List[Dict[str, Union[float, str]]]]:
+    language: str | None = None,
+    num_threads: int | None = None,
+) -> Tuple[str | None, List[Dict[str, float | str]] | None]:
     """
     Transcribes audio file using WhisperX model and aligns timestamps.
     It handles model loading, transcription, and alignment in one workflow.
@@ -222,11 +242,11 @@ def get_transcription(
         audio_path (str): Path to the audio file to transcribe
         device (str): Device to run inference on ('cuda' or 'cpu')
         model_size (str): Size of the Whisper model to use (e.g. 'tiny', 'base', 'small', 'medium', 'large')
-        print_progress (bool, optional): Whether to print progress during transcription. Defaults to False.
+        print_progress (bool, optional):Whether to print progress during transcripton. Defaults to False.
         language (str, optional): Language code for transcription. If None, auto-detects language. Defaults to None.
         num_threads (int, optional): Number of CPU threads to use. If None, uses all available threads. Defaults to None.
     Returns:
-        Tuple[str, List[Dict[str, Union[float, str]]]]: A tuple containing:
+        Tuple[str | None, List[Dict[str, float | str]] | None]: A tuple containing:
             - language (str): Detected or specified language code
             - segments (list): List of transcribed segments with aligned timestamps.
                               Each segment is a dict containing:
@@ -237,17 +257,24 @@ def get_transcription(
         - Uses int8 quantization for compute optimization
         - Automatically detects language if not specified
     """
-    import torch
-    import whisperx
     import gc
+
+    import torch
+
+    import whisperx
 
     logger = logging.getLogger("transcribe")
     stopwatch.start("Transcription")
 
+    # TODO: Clean up the following spagetti code with something cleaner
     # Set number of threads for transcription
-    threads_available: int = os.cpu_count()
-    if num_threads is None or num_threads < 1 or num_threads > threads_available:
+    threads_available: int | None = os.cpu_count()
+    if threads_available is None and num_threads is None:
+        threads_available = 1
+    elif num_threads is None or num_threads < 1 or num_threads > threads_available:
         num_threads = threads_available
+    else:
+        pass
 
     # Load model
     model = whisperx.load_model(
@@ -264,7 +291,7 @@ def get_transcription(
         batch_size=16,
         print_progress=print_progress,
     )
-    # Try and free GPU memory for next model load
+    # Try nd free GPU memory for next model load
     del model
     torch.cuda.empty_cache()
     gc.collect()
@@ -286,13 +313,13 @@ def get_transcription(
         print_progress=print_progress,
     )
 
-    # Delete CUDA cache
+    # Delte CUDA cache
     del model_a
     torch.cuda.empty_cache()
     gc.collect()
 
     # Get aligned segments
-    segments: List[Dict[str, Union[float, str]]] = aligned_result["segments"]
+    segments: List[Dict[str, float | str]] = aligned_result["segments"]
 
     logger.info(f"Language: {language}")
     for segment in segments:
@@ -365,7 +392,7 @@ def post_process(subtitles: str) -> str:
 
 
 def write_subtitles(
-    subtitles: str, file_name: str, input_media_path: str, language: str
+    subtitles: str, file_name: str, input_media_path: str, language: str | None
 ) -> None:
     """Write the generated subtitles to a file.
     Args:
@@ -375,7 +402,7 @@ def write_subtitles(
     """
     logger = logging.getLogger("write_subtitles")
     # The following should generate something like "input.ai.srt" from "input.mp4"
-    _subtitle_file_name = f"{file_name}.ai-{language}.srt"
+    _subtitle_file_name = f"{file_name}.{language}-AI.srt"
 
     # Write subtitles to file
     subtitle_path = os.path.join(os.path.dirname(input_media_path), _subtitle_file_name)
@@ -443,7 +470,7 @@ def main():
     logging.getLogger().setLevel(logging_level)
     coloredlogs.install(level=logging_level)
     # Set print_prgress flag depending on logging level
-    print_progress = logging_level <= logging.INFO
+    print_progress = logging_level < logging.INFO
 
     # If no args are passed to argparser, print help and exit
     if len(sys.argv) == 1:
