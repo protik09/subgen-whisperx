@@ -150,7 +150,6 @@ def get_media_files(
                 if f.endswith(media_extensions):
                     potential_media_files.append(file_path)
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            # media_files = list(filter(None, executor.map(is_media_file, potential_media_files)))
             future_ffprobe = []
             for file in potential_media_files:
                 future_ffprobe.append(executor.submit(is_media_file, file))
