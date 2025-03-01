@@ -560,6 +560,12 @@ def main():
                 input_media_path=input_media_path,
                 language=language,
             )
+            # Remove the audio file generated from the video
+            if not audio_flag:
+                try:
+                    os.remove(audio_path)
+                except Exception as e:
+                    logger.error(f"An error occurred while deleting audio file: {e}")
             stopwatch.stop(file_name)
     except Exception as e:
         logger.error(f"An error occurred during processing: {e}")
