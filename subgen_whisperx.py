@@ -240,6 +240,43 @@ def extract_audio(video_path: str = "") -> str:
     return extracted_audio_path
 
 
+def extract_audio_concurrent(media_files: List[Tuple[str, bool]]) -> List[Tuple[str, str, bool]]:
+    """Extract audio from multiple files concurrently using multiprocessing.
+    
+    Args:
+        media_files (List[Tuple[str, bool]]): List of (file_path, is_audio) tuples
+        
+    Returns:
+        List[Tuple[str, str, bool]]: List of (original_path, audio_path, was_extracted) tuples
+    """
+    logger = logging.getLogger("extract_audio_concurrent")
+    results = []
+    
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        future_to_file = {}
+        for file_path, is_audio in media_files:
+            if not is_audio:
+                # Only submit non-audio files for extraction
+                future = executor.submit(extract_audio, file_path)
+                future_to_file[future] = (file_path, is_audio)
+            else:
+                # Add audio files directly to results
+                results.append((file_path, file_path, False))
+        
+        # Process completed extractions
+        for future in concurrent.futures.as_completed(future_to_file):
+            original_path, is_audio = future_to_file[future]
+            try:
+                audio_path = future.result()
+                results.append((original_path, audio_path, True))
+                logger.info(f"Successfully extracted audio from {original_path}")
+            except Exception as e:
+                logger.error(f"Failed to extract audio from {original_path}: {e}")
+                results.append((original_path, original_path, False))
+    
+    return results
+
+
 def get_transcription(
     audio_path: str,
     device: str,
@@ -460,7 +497,7 @@ def main():
     parser.add_argument(
         "-log",
         "--log_level",
-        default="ERROR",
+        default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         help="Set the logging level (default: ERROR)",
     )
@@ -518,22 +555,15 @@ def main():
         logger.error("No media files found in the path provided")
         raise MediaNotFoundError
 
-    # Process each media file
     try:
-        for media_file in media_files:
-            input_media_path = media_file[0]
-            audio_flag = media_file[1]
-            file_name = str(os.path.basename(input_media_path.rsplit(".", 1)[0]))
+        # Extract audio from all files concurrently
+        logger.info("Starting concurrent audio extraction...")
+        extracted_files = extract_audio_concurrent(media_files)
+        
+        for original_path, audio_path, was_extracted in extracted_files:
+            file_name = str(os.path.basename(original_path.rsplit(".", 1)[0]))
             stopwatch.start(file_name)
-
-            # Extract Audio
-            if not audio_flag:
-                logger.info(f"Processing video file: {input_media_path}")
-                audio_path: str = extract_audio(video_path=input_media_path)
-            else:
-                logger.info(f"Processing audio file: {input_media_path}")
-                audio_path = input_media_path
-
+            
             # Get model size
             model_size = get_model(model_size=args.model_size, language=args.language)
 
@@ -557,18 +587,23 @@ def main():
             write_subtitles(
                 subtitles=subtitles,
                 file_name=file_name,
-                input_media_path=input_media_path,
+                input_media_path=original_path,
                 language=language,
             )
-            # Remove the audio file generated from the video
-            if not audio_flag:
+
+            # Cleanup extracted audio if needed
+            if was_extracted:
                 try:
                     os.remove(audio_path)
+                    logger.debug(f"Cleaned up temporary audio file: {audio_path}")
                 except Exception as e:
-                    logger.error(f"An error occurred while deleting audio file: {e}")
+                    logger.warning(f"Failed to clean up temporary audio file: {e}")
+
             stopwatch.stop(file_name)
+
     except Exception as e:
         logger.error(f"An error occurred during processing: {e}")
+        raise
 
     # Print summary of processing times
     stopwatch.summary()
