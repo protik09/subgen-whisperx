@@ -1,45 +1,45 @@
-# Ignore Python virtual environments
+# Python related
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
 .venv/
 venv/
+env/
+ENV/
+.uv/
+.python-version
 whisperx/
 
-# Ignore Python cache files
-__pycache__/
-*.pyc
-*.pyo
-
-# Ignore environment files
-.env
-
-# Ignore log files
-*.log
-logs/
-
-# Ignore output files
-*.srt
-audio-*.mp3
-
-# Ignore system files
-.DS_Store
-Thumbs.db
-
-# Ignore IDE/editor specific files
+# IDE/Editor
 .vscode/
 .idea/
 *.swp
 
-# Ignore OS generated files
-*.bak
-*.tmp
+# Environment files
+.env
 
-# Ignore debug assets
-assets/
-build/
+# Logs and debug
+*.log
+logs/
 **/*.ipynb
 *.csv
 whisperx-online.py
 whisperx-online.ipynb
 nvapi.ipynb
 
-# ignore repomix output
+# Project output
+*.srt
+audio-*.mp3
+assets/
+build/
 repomix-output.txt
+
+# System and temp files
+.DS_Store
+Thumbs.db
+*.bak
+*.tmp
