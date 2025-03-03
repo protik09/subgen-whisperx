@@ -28,6 +28,60 @@ coloredlogs.install(level="DEBUG")
 stopwatch: timer.Timer = timer.Timer("DEBUG")
 
 
+# Improved DLL loading
+def setup_dll_paths():
+    """Set up paths for DLL loading"""
+    logger = logging.getLogger("setup_dll_paths")
+
+    # Add multiple potential DLL locations
+    dll_paths = [
+        # Current directory libs folder
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "libs"),
+        # Executable directory libs folder (for PyInstaller)
+        os.path.join(os.path.dirname(sys.executable), "libs"),
+        # Current working directory libs folder
+        os.path.join(os.getcwd(), "libs"),
+    ]
+
+    # Log the paths we're adding
+    for path in dll_paths:
+        if os.path.exists(path):
+            logger.debug(f"Adding DLL path: {path}")
+            if sys.platform == "win32":
+                os.add_dll_directory(path)
+            os.environ["PATH"] = path + os.pathsep + os.environ["PATH"]
+        else:
+            logger.debug(f"DLL path does not exist: {path}")
+
+    # For CUDA specifically
+    if sys.platform == "win32":
+        # Try to find CUDA path from environment or common locations
+        cuda_paths = [
+            os.environ.get("CUDA_PATH"),
+            "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.6",
+            "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.5",
+            "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4",
+            "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.3",
+            "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.2",
+            "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.1",
+            "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.0",
+            "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v11.8",
+        ]
+
+        for cuda_path in cuda_paths:
+            if cuda_path and os.path.exists(cuda_path):
+                bin_path = os.path.join(cuda_path, "bin")
+                if os.path.exists(bin_path):
+                    logger.debug(f"Adding CUDA bin path: {bin_path}")
+                    os.add_dll_directory(bin_path)
+                    os.environ["PATH"] = bin_path + os.pathsep + os.environ["PATH"]
+                break
+
+
+# Call the setup function
+setup_dll_paths()
+
+
 def get_device(device_selection: str | None = None) -> str:
     """Determine the best available device with graceful fallback"""
     from torch import cuda
@@ -131,21 +185,21 @@ def get_media_files(
     """Get list of valid media files from directory and/or single file."""
     logger = logging.getLogger("get_media_files")
     media_extensions = tuple(MEDIA_EXTENSIONS)
-    
+
     # Use set to prevent duplicates
     potential_media_files = set()
     media_files: List[Tuple[str, bool]] = []
-    
+
     # Collect all potential media files
     if file and os.path.isfile(file):
         potential_media_files.add(file)
-        
+
     if directory and os.path.isdir(directory):
         for root, _, files in os.walk(directory):
             for f in files:
                 if f.endswith(media_extensions):
                     potential_media_files.add(os.path.join(root, f))
-                    
+
     if txt and os.path.isfile(txt):
         try:
             with open(txt, "r") as f:
@@ -169,10 +223,10 @@ def get_media_files(
     # Validate files concurrently
     with concurrent.futures.ThreadPoolExecutor() as executor:
         future_to_file = {
-            executor.submit(is_media_file, file_path): file_path 
+            executor.submit(is_media_file, file_path): file_path
             for file_path in potential_media_files
         }
-        
+
         for future in concurrent.futures.as_completed(future_to_file):
             file_path = future_to_file[future]
             try:
@@ -240,18 +294,20 @@ def extract_audio(video_path: str = "") -> str:
     return extracted_audio_path
 
 
-def extract_audio_concurrent(media_files: List[Tuple[str, bool]]) -> List[Tuple[str, str, bool]]:
+def extract_audio_concurrent(
+    media_files: List[Tuple[str, bool]],
+) -> List[Tuple[str, str, bool]]:
     """Extract audio from multiple files concurrently using multiprocessing.
-    
+
     Args:
         media_files (List[Tuple[str, bool]]): List of (file_path, is_audio) tuples
-        
+
     Returns:
         List[Tuple[str, str, bool]]: List of (original_path, audio_path, was_extracted) tuples
     """
     logger = logging.getLogger("extract_audio_concurrent")
     results = []
-    
+
     with concurrent.futures.ProcessPoolExecutor() as executor:
         future_to_file = {}
         for file_path, is_audio in media_files:
@@ -262,7 +318,7 @@ def extract_audio_concurrent(media_files: List[Tuple[str, bool]]) -> List[Tuple[
             else:
                 # Add audio files directly to results
                 results.append((file_path, file_path, False))
-        
+
         # Process completed extractions
         for future in concurrent.futures.as_completed(future_to_file):
             original_path, is_audio = future_to_file[future]
@@ -273,7 +329,7 @@ def extract_audio_concurrent(media_files: List[Tuple[str, bool]]) -> List[Tuple[
             except Exception as e:
                 logger.error(f"Failed to extract audio from {original_path}: {e}")
                 results.append((original_path, original_path, False))
-    
+
     return results
 
 
@@ -559,11 +615,11 @@ def main():
         # Extract audio from all files concurrently
         logger.info("Starting concurrent audio extraction...")
         extracted_files = extract_audio_concurrent(media_files)
-        
+
         for original_path, audio_path, was_extracted in extracted_files:
             file_name = str(os.path.basename(original_path.rsplit(".", 1)[0]))
             stopwatch.start(file_name)
-            
+
             # Get model size
             model_size = get_model(model_size=args.model_size, language=args.language)
 
