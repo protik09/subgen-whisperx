@@ -5,17 +5,17 @@ description = "Subtitle generator using WhisperX"
 authors = [
     { name = "Protik Banerji", email = "protik09@noreply.github.com" }
 ]
+requires-python = "==3.10.16"
 dependencies = [
     "pyinstaller>=6.12.0",
     "ffmpeg-python",
     "srt",
     "coloredlogs",
-    "torchaudio",
-    "torch",
-    "torchvision",
+    "torchaudio==2.6.0+cu126",
+    "torch==2.6.0+cu126",
+    "torchvision==0.21.0+cu126",
     "whisperx",
 ]
-requires-python = "==3.10.16"
 
 [build-system]
 requires = ["hatchling"]

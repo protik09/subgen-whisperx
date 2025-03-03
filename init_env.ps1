@@ -26,4 +26,4 @@ if (Test-Path ".venv\Scripts\activate") {
 
 # Install requirements
 Write-Host "Installing requirements..."
-uv pip install -r requirements.txt
+uv pip install --upgrade -r requirements.txt
