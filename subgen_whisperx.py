@@ -28,6 +28,7 @@ coloredlogs.install(level="DEBUG")
 stopwatch: timer.Timer = timer.Timer("DEBUG")
 
 
+# TODO: Clean this function up to be more specific rather than generic
 # Improved DLL loading
 def setup_dll_paths():
     """Set up paths for DLL loading"""
@@ -91,7 +92,7 @@ def get_device(device_selection: str | None = None) -> str:
     if device_selection is None or "cuda" in device_selection.lower():
         try:
             if cuda.is_available():
-                logger.debug("CUDA available.")
+                logger.info("CUDA available.")
                 return "cuda"
             else:
                 logger.warning("CUDA not available, falling back to CPU")
@@ -200,6 +201,7 @@ def get_media_files(
                 if f.endswith(media_extensions):
                     potential_media_files.add(os.path.join(root, f))
 
+    # Filter for file paths with valid media extensions``
     if txt and os.path.isfile(txt):
         try:
             with open(txt, "r") as f:
@@ -236,7 +238,7 @@ def get_media_files(
                 else:
                     logger.warning(f"Skipping invalid media file: '{file_path}'")
             except Exception as e:
-                logger.error(f"Validation failed for {file_path}: {e}")
+                logger.error(f"Validation failed for {file_path}: {str(e)}")
 
     if not media_files:
         logger.error("No valid media files found")
@@ -289,7 +291,7 @@ def extract_audio(video_path: str = "") -> str:
 
         ffmpeg.run(stream, overwrite_output=True)
     except Exception as e:
-        logger.error(f"An error occurred while extracting audio: {e}")
+        logger.error(f"An error occurred while extracting audio: {str(e)}")
     stopwatch.stop("Audio Extraction")
     return extracted_audio_path
 
@@ -333,6 +335,120 @@ def extract_audio_concurrent(
     return results
 
 
+def get_raw_transcription(
+    audio_paths: list[str],
+    device: str,
+    model_size: str,
+    print_progress: bool = False,
+    language: str | None = None,
+    num_threads: int | None = None,
+) -> list:
+    stopwatch.start("Transcribe")
+    import gc
+    import torch
+    import whisperx
+
+    logger = logging.getLogger("transcribe")
+
+    # TODO: Clean up the following spagetti code with something cleaner
+    # Set number of threads for transcription
+    threads_available: int | None = os.cpu_count()
+    if threads_available is None and num_threads is None:
+        threads_available = 1
+    elif num_threads is None or num_threads < 1 or num_threads > threads_available:
+        num_threads = threads_available
+    else:
+        pass
+    pass
+
+    # Load model
+    model = whisperx.load_model(
+        whisper_arch=model_size,
+        device=device,
+        compute_type="int8",
+        language=language,
+        threads=num_threads,
+    )
+    # Transcribe all audio
+    initial_transcripts: list = []
+    for audio_path in audio_paths:
+        try:
+            # Initial transcription
+            initial_transcripts.append(
+                model.transcribe(
+                    audio=audio_path,
+                    batch_size=16,
+                    print_progress=print_progress,
+                )
+            )
+            logger.info(f"Transcribed: {os.path.basename(audio_path)}")
+        except Exception as e:
+            logger.error(f"Transcription failure: {os.path.basename(audio_path)}.")
+            logger.debug(f"{e}")
+
+    # Clean up GPU memory
+    del model
+    torch.cuda.empty_cache()
+    gc.collect()
+    stopwatch.stop("Transcribe")
+    return initial_transcripts
+
+
+def get_aligned_transcripts(
+    language: str,
+    device: str,
+    initial_transcript: list,
+    audio_paths: list[str],
+    print_progress: bool = False,
+) -> Tuple[str, dict]:
+    stopwatch.start("Align Transcripts")
+    import torch
+    import whisperx
+
+    logger = logging.getLogger("align_transcripts")
+
+    # Store language before alignment
+    if language is None:
+        language = initial_transcript["language"]
+
+    # Load Alignment Model
+    model_a, metadata = whisperx.load_align_model(
+        language_code=language,
+        device=device,
+    )
+    aligned_transcripts: list = []
+    # Align all the text and audio data
+    for audio_path in audio_paths:
+        try:
+            aligned_transcripts.append(
+                whisperx.align(
+                    transcript=initial_transcript["segments"],
+                    model=model_a,
+                    align_model_metadata=metadata,
+                    audio=audio_path,
+                    device=device,
+                    print_progress=print_progress,
+                )
+            )
+        except Exception as e:
+            logger.error(f"Alignment failure: {os.path.basename(audio_path)}.")
+            logger.debug(f"{e}")
+
+    # Delete CUDA cache
+    del model_a
+    torch.cuda.empty_cache()
+    gc.collect()
+    segments = []
+    languages = []
+    # Get aligned segments
+    for transcribed_segments in aligned_transcripts:
+        segments.append(transcribed_segments["segments"])
+        languages.append(transcribed_segments["language"])
+
+    stopwatch.stop("Align Transcripts")
+    return languages, segments
+
+
 def get_transcription(
     audio_path: str,
     device: str,
@@ -369,7 +485,7 @@ def get_transcription(
 
     import whisperx
 
-    logger = logging.getLogger("transcribe")
+    logger = logging.getLogger("Transcription")
     stopwatch.start("Transcription")
 
     # TODO: Clean up the following spagetti code with something cleaner
@@ -419,7 +535,7 @@ def get_transcription(
         print_progress=print_progress,
     )
 
-    # Delte CUDA cache
+    # Delete CUDA cache
     del model_a
     torch.cuda.empty_cache()
     gc.collect()
@@ -616,12 +732,12 @@ def main():
         logger.info("Starting concurrent audio extraction...")
         extracted_files = extract_audio_concurrent(media_files)
 
+        # Get model size
+        model_size = get_model(model_size=args.model_size, language=args.language)
+
         for original_path, audio_path, was_extracted in extracted_files:
             file_name = str(os.path.basename(original_path.rsplit(".", 1)[0]))
             stopwatch.start(file_name)
-
-            # Get model size
-            model_size = get_model(model_size=args.model_size, language=args.language)
 
             # Transcribe audio
             language, segments = get_transcription(
@@ -659,6 +775,7 @@ def main():
 
     except Exception as e:
         logger.error(f"An error occurred during processing: {e}")
+        stopwatch.stop(file_name)
         raise
 
     # Print summary of processing times
