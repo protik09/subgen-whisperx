@@ -16,7 +16,7 @@ A powerful subtitle generation tool using WhisperX for accurate speech-to-text t
 
 - Python 3.10 or later
 - NVIDIA GPU with CUDA 12 support (optional, for GPU acceleration)
-- Latest driver from nVidia
+- Latest driver from NVIDIA (Very important, when using `cuda` flag)
 - FFmpeg
 - Git
 
@@ -27,49 +27,22 @@ A powerful subtitle generation tool using WhisperX for accurate speech-to-text t
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/protik09/subgen-whisperx.git
+git clone https://github.com/protik09/subgen-whisperx.git --depth=1
 cd subgen-whisperx
 ```
 
-2. Create and activate a conda environment:
+1. Create and activate a virtual environment:
+
+In Powershell:
 
 ```bash
-.\activate_venv.ps1
+.\uv_init.ps1
 ```
 
-or
+or in *bash*
 
 ```bash
-.\activate_venv.sh
-```
-
-### The manual way
-
-1. Clone the repository:
-
-```bash
-git clone https://github.com/protik09/subgen-whisperx.git
-cd subgen-whisperx
-```
-
-2. Create and activate a conda environment:
-
-```bash
-conda create -n whisperx python=3.10 -y
-conda activate whisperx
-```
-
-3. Install PyTorch with CUDA support:
-
-```bash
-conda install -y pytorch==2.0.0 torchaudio==2.0.0 pytorch-cuda=11.8 -c pytorch -c nvidia
-```
-
-4. Install required packages:
-
-```bash
-pip install whisperx ffmpeg coloredlogs halo
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121 --force-reinstall --no-cache-dir
+.\uv_init.sh
 ```
 
 ## Usage
@@ -87,7 +60,7 @@ python subgen_whisperx.py -f path/to/video.mp4
 Process all media files in a directory:
 
 ```bash
-python subgen_whisperx.py -d path/to/directory
+python subgen_whisperx.py -l en -d path/to/directory
 ```
 
 Specify compute device and model size:
@@ -109,8 +82,9 @@ python subgen_whisperx.py -f video.mp4 -l DEBUG
 | `-f`, `--file` | Path to input media file | None |
 | `-d`, `--directory` | Path to directory containing media files | None |
 | `-c`, `--compute_device` | Device for computation (`cuda` or `cpu`) | Auto-detect |
-| `-m`, `--model_size` | WhisperX model size | `base.en` |
-| `-l`, `--log-level` | Logging level | `ERROR` |
+| `-m`, `--model_size` | WhisperX model size | Auto-detect |
+| `-l`, `--language` | Subtitle language | None |
+| `-log`, `--log-level` | Logging level | `ERROR` |
 | `-t-`, `--txt` | Text file with file/folder paths | None |
 
 ## Output
@@ -122,8 +96,9 @@ The script generates SRT subtitle files in the same directory as the input media
 
 ## Troubleshooting
 
-If the automatic model selection leads to the CUDA Out of Memory Issue, just manually select 
-the next smaller model using the `-m` flag.
+If the automatic model selection leads to the CUDA Out of Memory (OOM) Issue, just manually select
+the next smaller model using the `-m` flag. For example, if the `-m medium` flag causes a
+CUDA OOM, then use `-m small.en` or `-m small`.
 
 ## Performance
 
