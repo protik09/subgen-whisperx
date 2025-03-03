@@ -117,8 +117,8 @@ python subgen_whisperx.py -f video.mp4 -l DEBUG
 
 The script generates SRT subtitle files in the same directory as the input media:
 
-- Format: `filename.ai-{language}.srt`
-- Example: `Meetings-0822.ai-en.srt` for a video called `Meetings-0822.mp4`
+- Format: `filename.{language}-ai.srt`
+- Example: `Meetings-0822.en-ai.srt` for a video called `Meetings-0822.mp4`
 
 ## Troubleshooting
 

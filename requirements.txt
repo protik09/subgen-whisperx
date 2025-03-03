@@ -1,7 +1,9 @@
-whisperx
 ffmpeg
 ffmpeg-python
-python-ffmpeg 
-torch
-coloredlogs
 srt
+coloredlogs
+torchaudio
+torch
+torchvision
+--extra-index-url https://download.pytorch.org/whl/cu126
+whisperx
