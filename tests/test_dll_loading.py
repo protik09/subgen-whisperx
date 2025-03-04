@@ -6,7 +6,6 @@ Run this script to diagnose DLL loading issues.
 import os
 import sys
 import logging
-import ctypes
 from ctypes import windll
 import platform
 import glob
@@ -25,7 +24,7 @@ def check_cuda_environment():
     if cuda_path:
         logger.info(f"CUDA_PATH is set to: {cuda_path}")
         if os.path.exists(cuda_path):
-            logger.info(f"✓ CUDA_PATH directory exists")
+            logger.info("✓ CUDA_PATH directory exists")
         else:
             logger.error(f"✗ CUDA_PATH directory does not exist: {cuda_path}")
     else:
