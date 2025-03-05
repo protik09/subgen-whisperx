@@ -11,6 +11,9 @@ A powerful subtitle generation tool using WhisperX for accurate speech-to-text t
 - ⏱️ Performance timing and logging
 - 🔧 Multiple language model options
 - 🎛️ Configurable compute device selection
+- 🌐 Multi-language support with auto-detection
+- 📑 Text file input support for batch processing
+- 🔄 Automatic model size selection
 
 ## Prerequisites
 
@@ -81,8 +84,8 @@ python subgen_whisperx.py -f video.mp4 -l DEBUG
 |----------|-------------|---------|
 | `-f`, `--file` | Path to input media file | None |
 | `-d`, `--directory` | Path to directory containing media files | None |
-| `-c`, `--compute_device` | Device for computation (`cuda` or `cpu`) | Auto-detect |
-| `-m`, `--model_size` | WhisperX model size | Auto-detect |
+| `-c`, `--compute_device` | Device for computation (`cuda` or `cpu`) | Auto |
+| `-m`, `--model_size` | WhisperX model size | Auto |
 | `-l`, `--language` | Subtitle language | None |
 | `-log`, `--log-level` | Logging level | `ERROR` |
 | `-t-`, `--txt` | Text file with file/folder paths | None |
