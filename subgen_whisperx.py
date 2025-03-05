@@ -6,10 +6,30 @@ import sys
 from datetime import datetime
 from typing import Dict, List, Tuple
 
-import coloredlogs
-import ffmpeg
-import srt  # TODO: Remove dependency in future update
-
+try:
+    import coloredlogs
+    import ffmpeg
+    import srt  # TODO: Remove dependency in future update
+except ImportError as e:
+    import subprocess
+    # Yes I'm aware this could be a potential security issue
+    # Install missing dependencies
+    print(f"Installing missing dependencies: {e}")
+    if os.windows:
+        commandline_options = [
+            "powershell.exe",
+            "-ExecutionPolicy",
+            "Unrestricted",
+            "uv_init.ps1",
+        ]
+    else:
+        commandline_options = ["bash", "uv_init.sh"]
+    process_result = subprocess.run(
+        commandline_options,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+    )
 from utils.exceptions import FolderNotFoundError, MediaNotFoundError
 import utils.timer as timer
 from utils.constants import MEDIA_EXTENSIONS, MODELS_AVAILABLE, WHISPER_LANGUAGE
