@@ -12,6 +12,7 @@ try:
     import srt  # TODO: Remove dependency in future update
 except ImportError as e:
     import subprocess
+
     # Yes I'm aware this could be a potential security issue
     # Install missing dependencies
     print(f"Installing missing dependencies: {e}")
@@ -40,12 +41,17 @@ os.makedirs(log_dir, exist_ok=True)
 log_filename = os.path.join(
     log_dir, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_subgen.log"
 )
-LOGGING_LEVEL = logging.ERROR
-logging.basicConfig(filename=log_filename, filemode="a", level=LOGGING_LEVEL)
-coloredlogs.install(level="DEBUG")
+LOGGING_LEVEL = logging.DEBUG
+logging.basicConfig(
+    filename=log_filename,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    filemode="a",
+    level=LOGGING_LEVEL,
+)
+coloredlogs.install(level=logging.getLevelName(LOGGING_LEVEL))
 
 # Init global timer
-stopwatch: timer.Timer = timer.Timer("DEBUG")
+stopwatch: timer.Timer = timer.Timer(logging.getLevelName(LOGGING_LEVEL))
 
 
 # TODO: Clean this function up to be more specific rather than generic
