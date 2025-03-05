@@ -97,6 +97,8 @@ class Options:
                 help="Pass a txt file containing the paths to either media files or directories",
             )
             self._args = self._parser.parse_args()
+            # Yes I know I should use getters and setters for the following properties
+            # but I'm not going to do that because I'm lazy and it seems silly to do so
             self.file = self._args.file
             self.directory = self._args.directory
             self.compute_device = self._args.compute_device
@@ -113,10 +115,12 @@ class Options:
                 return
 
             # Set logging level
-            logger = logging.getLogger("options")
-            logger.setLevel(self.log_level)
+            _logger = logging.getLogger("options")
+            _logger.setLevel(self.log_level)
 
             # If log level is less than INFO, set the progress bar to True
+            # BTW, I'm abusing the getLevelName method here using it to compare log levels
+            # It might stop working in the future.
             self.print_progress_flag = (
                 True
                 if logging.getLevelName(self.log_level) < logging.getLevelName("INFO")
@@ -125,17 +129,17 @@ class Options:
 
             # Check that args.directory is a valid directory only if specified in the arguments
             if self.directory and not os.path.isdir(self.directory):
-                logger.error(f"Error: Directory '{self.directory}' does not exist.")
+                _logger.error(f"Error: Directory '{self.directory}' does not exist.")
                 raise FolderNotFoundError
             # Check that args.file is a valid file only if specified in the arguments
 
             if self.file and not os.path.isfile(self.file):
-                logger.error(f"Error: File '{self.file}' does not exist.")
+                _logger.error(f"Error: File '{self.file}' does not exist.")
                 raise FileNotFoundError
 
             # Check that the language flag passed is compatible with Whisper
             if self.language and self.language not in WHISPER_LANGUAGE:
-                logger.error(
+                _logger.error(
                     f"The language code {self.language} is not a valid ISO 639-1 code supported by Whisper"
                 )
                 raise KeyError
@@ -168,18 +172,18 @@ class Options:
         """
         from torch import cuda
 
-        logger = logging.getLogger("get_device")
+        _logger = logging.getLogger("options_get_device")
 
         if self.device_selection is None or "cuda" in self.device_selection.lower():
             try:
                 if cuda.is_available():
-                    logger.info("CUDA available. Using GPU acceleration.")
+                    _logger.info("CUDA available. Using GPU acceleration.")
                     return "cuda"
                 else:
-                    logger.warning("CUDA not available, falling back to CPU")
+                    _logger.warning("CUDA not available, falling back to CPU")
             except Exception as e:
-                logger.error(f"Warning: Error checking CUDA availability ({str(e)})")
-                logger.warning("Falling back to CPU.")
+                _logger.error(f"Warning: Error checking CUDA availability ({str(e)})")
+                _logger.warning("Falling back to CPU.")
         else:
             pass
         return "cpu"
@@ -192,10 +196,10 @@ class Options:
         """
         from torch import cuda
 
-        logger = logging.getLogger("get_model")
+        _logger = logging.getLogger("options_get_model")
 
         if self.model_size not in MODELS_AVAILABLE:
-            logger.error(f"Model size '{self.model_size}' is not available.")
+            _logger.error(f"Model size '{self.model_size}' is not available.")
             raise ValueError(
                 f"Model size '{self.model_size}' is not valid. Available models: {MODELS_AVAILABLE}"
             )
@@ -205,7 +209,7 @@ class Options:
                 vram_gb = round(
                     (cuda.get_device_properties(0).total_memory / 1.073742e9), 1
                 )
-                logger.debug(f"Detected VRAM: {vram_gb} GB")
+                _logger.debug(f"Detected VRAM: {vram_gb} GB")
                 if vram_gb >= 9.0:
                     self.model_size = "large-v2"
                 elif vram_gb >= 7.5:
@@ -222,7 +226,7 @@ class Options:
                 self.model_size = "tiny"  # Fallback if no GPU is available
         else:
             self.model_size = self.model_size
-        logger.info(
+        _logger.info(
             f"Selected model size: {self.model_size} for language: {self.language}"
         )
         return self.model_size
