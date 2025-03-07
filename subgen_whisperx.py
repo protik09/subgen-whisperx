@@ -6,31 +6,10 @@ import sys
 from datetime import datetime
 from typing import Dict, List, Tuple
 
-try:
-    import coloredlogs
-    import ffmpeg
-    import srt  # TODO: Remove dependency in future update
-except ImportError as e:
-    import subprocess
+import coloredlogs
+import ffmpeg
+import srt  # TODO: Remove dependency in future update
 
-    # Yes I'm aware this could be a potential security issue
-    # Install missing dependencies
-    print(f"Installing missing dependencies: {e}")
-    if os.windows:
-        commandline_options = [
-            "powershell.exe",
-            "-ExecutionPolicy",
-            "Unrestricted",
-            "uv_init.ps1",
-        ]
-    else:
-        commandline_options = ["bash", "uv_init.sh"]
-    process_result = subprocess.run(
-        commandline_options,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        universal_newlines=True,
-    )
 from utils.exceptions import FolderNotFoundError, MediaNotFoundError
 import utils.timer as timer
 from utils.constants import MEDIA_EXTENSIONS, MODELS_AVAILABLE, WHISPER_LANGUAGE
@@ -42,13 +21,34 @@ log_filename = os.path.join(
     log_dir, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_subgen.log"
 )
 LOGGING_LEVEL = logging.DEBUG
-logging.basicConfig(
-    filename=log_filename,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    filemode="a",
-    level=LOGGING_LEVEL,
+
+# Create a file handler that only handles your app's logs
+file_handler = logging.FileHandler(filename=log_filename, mode="a")
+file_handler.setLevel(LOGGING_LEVEL)
+file_handler.setFormatter(
+    logging.Formatter("%(asctime)s - [%(name)s] - [%(levelname)s] : %(message)s")
 )
-coloredlogs.install(level=logging.getLevelName(LOGGING_LEVEL))
+
+# Configure the root logger for console output
+logging.basicConfig(
+    level=LOGGING_LEVEL,
+    format="%(asctime)s - [%(name)s] - [%(levelname)s] : %(message)s",
+)
+
+# Get your application's logger
+logger = logging.getLogger("subgen_whisperx")
+logger.setLevel(LOGGING_LEVEL)
+# Prevent propagation to root logger
+logger.propagate = False
+# Add file handler to your logger
+logger.addHandler(file_handler)
+
+# Install coloredlogs for console output
+coloredlogs.install(
+    level=LOGGING_LEVEL,
+    fmt="%(asctime)s - [%(name)s] - [%(levelname)s] : %(message)s",
+    logger=logger,
+)
 
 # Init global timer
 stopwatch: timer.Timer = timer.Timer(logging.getLevelName(LOGGING_LEVEL))
@@ -58,7 +58,7 @@ stopwatch: timer.Timer = timer.Timer(logging.getLevelName(LOGGING_LEVEL))
 # Improved DLL loading
 def setup_dll_paths():
     """Set up paths for DLL loading"""
-    logger = logging.getLogger("setup_dll_paths")
+    logger = logging.getLogger("subgen_whisperx.setup_dll_paths")
 
     # Add multiple potential DLL locations
     dll_paths = [
@@ -113,7 +113,7 @@ def get_device(device_selection: str | None = None) -> str:
     """Determine the best available device with graceful fallback"""
     from torch import cuda
 
-    logger = logging.getLogger("get_device")
+    logger = logging.getLogger("subgen_whisperx.get_device")
 
     if device_selection is None or "cuda" in device_selection.lower():
         try:
@@ -135,7 +135,7 @@ def get_model(model_size: str | None = None, language: str | None = None) -> str
     """Select the model based on size and language."""
     from torch import cuda
 
-    logger = logging.getLogger("get_model")
+    logger = logging.getLogger("subgen_whisperx.get_model")
 
     if model_size not in MODELS_AVAILABLE:
         logger.error(f"Model size '{model_size}' is not available.")
@@ -180,7 +180,7 @@ def is_media_file(file_path: str) -> Tuple[bool, bool]:
     Returns:
         Tuple[bool, bool]: Tuple containing (is_valid_media, is_audio_only)
     """
-    logger = logging.getLogger("is_media_file")
+    logger = logging.getLogger("subgen_whisperx.is_media_file")
     _valid_media_flag: bool = False
     _valid_audio_flag: bool = False
     try:
@@ -210,7 +210,7 @@ def get_media_files(
     directory: str | None = None, file: str | None = None, txt: str | None = None
 ) -> List[Tuple[str, bool]] | None:
     """Get list of valid media files from directory and/or single file."""
-    logger = logging.getLogger("get_media_files")
+    logger = logging.getLogger("subgen_whisperx.get_media_files")
     media_extensions = tuple(MEDIA_EXTENSIONS)
 
     # Use set to prevent duplicates
@@ -292,8 +292,8 @@ def extract_audio(video_path: str = "") -> str:
         - Uses a larger thread queue size for better throughput
         - Enables fast seeking for improved performance
     """
-    logger = logging.getLogger("extract_audio")
-    stopwatch.start("Audio Extraction")
+    logger = logging.getLogger("subgen_whisperx.extract_audio")
+    stopwatch.start(f"Audio Extraction -> {os.path.basename(video_path)}")
     extracted_audio_path: str = (
         f"audio-{os.path.splitext(os.path.basename(video_path))[0]}.mp3"
     )
@@ -318,7 +318,7 @@ def extract_audio(video_path: str = "") -> str:
         ffmpeg.run(stream, overwrite_output=True)
     except Exception as e:
         logger.error(f"An error occurred while extracting audio: {str(e)}")
-    stopwatch.stop("Audio Extraction")
+    stopwatch.stop(f"Audio Extraction -> {os.path.basename(video_path)}")
     return extracted_audio_path
 
 
@@ -333,7 +333,7 @@ def extract_audio_concurrent(
     Returns:
         List[Tuple[str, str, bool]]: List of (original_path, audio_path, was_extracted) tuples
     """
-    logger = logging.getLogger("extract_audio_concurrent")
+    logger = logging.getLogger("subgen_whisperx.extract_audio_concurrent")
     results = []
 
     with concurrent.futures.ProcessPoolExecutor() as executor:
@@ -371,10 +371,10 @@ def get_raw_transcription(
 ) -> list:
     stopwatch.start("Transcribe")
     import gc
-    import torch
+    from torch import cuda
     import whisperx
 
-    logger = logging.getLogger("transcribe")
+    logger = logging.getLogger("subgen_whisperx.transcribe")
 
     # TODO: Clean up the following spagetti code with something cleaner
     # Set number of threads for transcription
@@ -414,7 +414,7 @@ def get_raw_transcription(
 
     # Clean up GPU memory
     del model
-    torch.cuda.empty_cache()
+    cuda.empty_cache()
     gc.collect()
     stopwatch.stop("Transcribe")
     return initial_transcripts
@@ -428,10 +428,10 @@ def get_aligned_transcripts(
     print_progress: bool = False,
 ) -> Tuple[str, dict]:
     stopwatch.start("Align Transcripts")
-    import torch
+    from torch import cuda
     import whisperx
 
-    logger = logging.getLogger("align_transcripts")
+    logger = logging.getLogger("subgen_whisperx.align_transcripts")
 
     # Store language before alignment
     if language is None:
@@ -462,7 +462,7 @@ def get_aligned_transcripts(
 
     # Delete CUDA cache
     del model_a
-    torch.cuda.empty_cache()
+    cuda.empty_cache()
     gc.collect()
     segments = []
     languages = []
@@ -506,13 +506,11 @@ def get_transcription(
         - Automatically detects language if not specified
     """
     import gc
-
-    import torch
-
+    from torch import cuda
     import whisperx
 
-    logger = logging.getLogger("Transcription")
-    stopwatch.start("Transcription")
+    logger = logging.getLogger("subgen_whisperx.Transcription")
+    stopwatch.start(f"Transcription -> {os.path.basename(audio_path).split('-')[1]}")
 
     # TODO: Clean up the following spagetti code with something cleaner
     # Set number of threads for transcription
@@ -541,7 +539,7 @@ def get_transcription(
     )
     # Try nd free GPU memory for next model load
     del model
-    torch.cuda.empty_cache()
+    cuda.empty_cache()
     gc.collect()
     # Store language before alignment
     if language is None:
@@ -563,7 +561,7 @@ def get_transcription(
 
     # Delete CUDA cache
     del model_a
-    torch.cuda.empty_cache()
+    cuda.empty_cache()
     gc.collect()
 
     # Get aligned segments
@@ -581,12 +579,12 @@ def get_transcription(
     # except Exception as e:
     #     logger.error(f"An error occurred while deleting audio file: {e}")
 
-    stopwatch.stop("Transcription")
+    stopwatch.stop(f"Transcription -> {os.path.basename(audio_path).split('-')[1]}")
     return language, segments
 
 
 def generate_subtitles(segments: Dict) -> str:
-    logger = logging.getLogger("generate_subtitles")
+    logger = logging.getLogger("subgen_whisperx.generate_subtitles")
     _srt_content = []
     for i, segment in enumerate(segments, start=1):
         segment_start = timer.Timer.format_time(segment["start"])
@@ -602,7 +600,7 @@ def generate_subtitles(segments: Dict) -> str:
 
 
 def post_process(subtitles: str) -> str:
-    logger = logging.getLogger("post_process")
+    logger = logging.getLogger("subgen_whisperx.post_process")
     """Post-process the generated subtitles.
     This function performs additional processing on the generated subtitles to improve readability
     and ensure compliance with common subtitle standards.
@@ -648,7 +646,7 @@ def write_subtitles(
         output_path (str): The path to write the subtitles to
         language (str): The language for subtitles
     """
-    logger = logging.getLogger("write_subtitles")
+    logger = logging.getLogger("subgen_whisperx.write_subtitles")
     # The following should generate something like "input.ai.srt" from "input.mp4"
     _subtitle_file_name = f"{file_name}.{language}-AI.srt"
 
@@ -663,7 +661,7 @@ def write_subtitles(
 
 
 def main():
-    logger = logging.getLogger("main")
+    logger = logging.getLogger("subgen_whisperx.main")
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Subtitle Generator")
     parser.add_argument(
@@ -720,9 +718,9 @@ def main():
     args = parser.parse_args()
 
     # Set logging level
-    logging_level = getattr(logging, args.log_level.upper(), logging.DEBUG)
-    logging.getLogger().setLevel(logging_level)
-    coloredlogs.install(level=logging_level)
+    logging_level = getattr(logging, args.log_level.upper(), LOGGING_LEVEL)
+    logging.getLogger().setLevel(LOGGING_LEVEL)
+    coloredlogs.install(level=logging_level, milliseconds=True,reconfigure=True)
     # Set print_prgress flag depending on logging level
     print_progress = logging_level < logging.INFO
 
@@ -768,7 +766,7 @@ def main():
             # Transcribe audio
             language, segments = get_transcription(
                 audio_path=audio_path,
-                device=get_device(args.compute_device.lower()),
+                device=get_device(args.compute_device),
                 model_size=model_size,
                 language=args.language,
                 num_threads=args.num_threads,
