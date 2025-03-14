@@ -181,7 +181,7 @@ class TestMedia(unittest.TestCase):
 
     @patch.object(Media, '_collect_potential_files')
     @patch.object(Media, 'is_media_file')
-    def test_discover_media_files_success(self, mock_is_media_file, mock_collect_files):
+    def test_get_media_files_success(self, mock_is_media_file, mock_collect_files):
         """Test discovering media files successfully."""
         # Setup
         file1 = Path('/test_files/test_video.mp4')
@@ -199,7 +199,7 @@ class TestMedia(unittest.TestCase):
         mock_is_media_file.side_effect = side_effect
 
         # Execute
-        result = self.media.discover_media_files()
+        result = self.media.get_media_files()
 
         # Assert
         self.assertEqual(len(result), 2)
@@ -213,18 +213,18 @@ class TestMedia(unittest.TestCase):
         self.assertTrue(media_files[str(file2)])   # audio file
 
     @patch.object(Media, '_collect_potential_files')
-    def test_discover_media_files_no_potential_files(self, mock_collect_files):
+    def test_get_media_files_no_potential_files(self, mock_collect_files):
         """Test discovering media files when no potential files are found."""
         # Setup
         mock_collect_files.return_value = set()
 
         # Execute and Assert
         with self.assertRaises(MediaNotFoundError):
-            self.media.discover_media_files()
+            self.media.get_media_files()
 
     @patch.object(Media, '_collect_potential_files')
     @patch.object(Media, 'is_media_file')
-    def test_discover_media_files_no_valid_files(self, mock_is_media_file, mock_collect_files):
+    def test_get_media_files_no_valid_files(self, mock_is_media_file, mock_collect_files):
         """Test discovering media files when no valid files are found."""
         # Setup
         file1 = Path('/path/to/invalid1.mp4')
@@ -234,11 +234,11 @@ class TestMedia(unittest.TestCase):
 
         # Execute and Assert
         with self.assertRaises(MediaNotFoundError):
-            self.media.discover_media_files()
+            self.media.get_media_files()
 
     @patch.object(Media, '_collect_potential_files')
     @patch.object(Media, 'is_media_file')
-    def test_discover_media_files_validation_exception(self, mock_is_media_file, mock_collect_files):
+    def test_get_media_files_validation_exception(self, mock_is_media_file, mock_collect_files):
         """Test handling exceptions during file validation."""
         # Setup
         file1 = Path('/test_files/test_video.mp4')
@@ -256,7 +256,7 @@ class TestMedia(unittest.TestCase):
         mock_is_media_file.side_effect = side_effect
 
         # Execute
-        result = self.media.discover_media_files()
+        result = self.media.get_media_files()
 
         # Assert
         self.assertEqual(len(result), 1)  # Only one valid file
