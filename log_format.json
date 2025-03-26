@@ -1,0 +1,41 @@
+{
+    "version": 1,
+    "disable_existing_loggers": true,
+    "formatters": {
+        "detailed": {
+            "format": "%(asctime)s.%(msecs)03d - [%(name)s] - [%(levelname)s] : %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S"
+        }
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "level": "DEBUG",
+            "formatter": "detailed",
+            "stream": "ext://sys.stdout"
+        },
+        "file": {
+            "class": "logging.FileHandler",
+            "level": "DEBUG",
+            "formatter": "detailed",
+            "filename": "app.log",
+            "mode": "a"
+        }
+    },
+    "loggers": {
+        "subgen_whisperx": {
+            "level": "DEBUG",
+            "handlers": [
+                "console",
+                "file"
+            ],
+            "propagate": true
+        }
+    },
+    "root": {
+        "level": "WARNING",
+        "handlers": [
+            "console"
+        ]
+    }
+}

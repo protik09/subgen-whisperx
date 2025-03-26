@@ -1,7 +1,10 @@
 import argparse
 import concurrent.futures
+import json
 import logging
+import logging.config
 import os
+import pathlib
 import sys
 from datetime import datetime
 from typing import Dict, List, Tuple
@@ -10,9 +13,9 @@ import coloredlogs
 import ffmpeg
 import srt  # TODO: Remove dependency in future update
 
-from utils.exceptions import FolderNotFoundError, MediaNotFoundError
 import utils.timer as timer
 from utils.constants import MEDIA_EXTENSIONS, MODELS_AVAILABLE, WHISPER_LANGUAGE
+from utils.exceptions import FolderNotFoundError, MediaNotFoundError
 
 # Setup logging
 log_dir = "logs"
@@ -22,32 +25,36 @@ log_filename = os.path.join(
 )
 LOGGING_LEVEL = logging.DEBUG
 
-# Create a file handler that only handles your app's logs
-file_handler = logging.FileHandler(filename=log_filename, mode="a")
-file_handler.setLevel(LOGGING_LEVEL)
-file_handler.setFormatter(
-    logging.Formatter("%(asctime)s - [%(name)s] - [%(levelname)s] : %(message)s")
-)
-
-# Configure the root logger for console output
+# Initialize basic logging configuration first
 logging.basicConfig(
     level=LOGGING_LEVEL,
-    format="%(asctime)s - [%(name)s] - [%(levelname)s] : %(message)s",
+    format="%(asctime)s - [%(name)s] - [%(levelname)s] : %(message)s"
 )
 
-# Get your application's logger
+# Create the logger before configuration
 logger = logging.getLogger("subgen_whisperx")
 logger.setLevel(LOGGING_LEVEL)
-# Prevent propagation to root logger
-logger.propagate = False
-# Add file handler to your logger
-logger.addHandler(file_handler)
+
+# Load and apply logging configuration
+config_file = pathlib.Path("log_format.json")
+try:
+    with open(config_file, "r") as f:
+        log_config = json.load(f)
+        log_config["handlers"]["file"]["filename"] = log_filename
+        log_config["handlers"]["file"]["level"] = LOGGING_LEVEL
+        logging.config.dictConfig(log_config)
+except Exception:
+    # Fallback to basic file handler if config fails
+    file_handler = logging.FileHandler(filename=log_filename, mode="a")
+    file_handler.setLevel(LOGGING_LEVEL)
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s - [%(name)s] - [%(levelname)s] : %(message)s")
+    )
+    logger.addHandler(file_handler)
 
 # Install coloredlogs for console output
 coloredlogs.install(
-    level=LOGGING_LEVEL,
-    fmt="%(asctime)s - [%(name)s] - [%(levelname)s] : %(message)s",
-    logger=logger,
+    logger=logger
 )
 
 # Init global timer
@@ -371,8 +378,9 @@ def get_raw_transcription(
 ) -> list:
     stopwatch.start("Transcribe")
     import gc
-    from torch import cuda
+
     import whisperx
+    from torch import cuda
 
     logger = logging.getLogger("subgen_whisperx.transcribe")
 
@@ -509,7 +517,7 @@ def get_transcription(
     from torch import cuda
     import whisperx
 
-    logger = logging.getLogger("subgen_whisperx.Transcription")
+    logger = logging.getLogger("subgen_whisperx.transcription")
     stopwatch.start(f"Transcription -> {os.path.basename(audio_path).split('-')[1]}")
 
     # TODO: Clean up the following spagetti code with something cleaner
@@ -585,6 +593,7 @@ def get_transcription(
 
 def generate_subtitles(segments: Dict) -> str:
     logger = logging.getLogger("subgen_whisperx.generate_subtitles")
+    logger.debug(f"Generating subtitles for {len(segments)} segments")
     _srt_content = []
     for i, segment in enumerate(segments, start=1):
         segment_start = timer.Timer.format_time(segment["start"])
@@ -720,7 +729,7 @@ def main():
     # Set logging level
     logging_level = getattr(logging, args.log_level.upper(), LOGGING_LEVEL)
     logging.getLogger().setLevel(LOGGING_LEVEL)
-    coloredlogs.install(level=logging_level, milliseconds=True,reconfigure=True)
+    # coloredlogs.install(level=logging_level, milliseconds=True, reconfigure=True)
     # Set print_prgress flag depending on logging level
     print_progress = logging_level < logging.INFO
 
