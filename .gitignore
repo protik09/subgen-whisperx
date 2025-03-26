@@ -43,3 +43,10 @@ repomix-output.txt
 Thumbs.db
 *.bak
 *.tmp
+test_files/*.mp4
+test_files/*.old
+test_files/*.srt
+.cursor/
+.trunk/
+dist/
+_models/
