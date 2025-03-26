@@ -15,7 +15,7 @@ from unittest.mock import patch, MagicMock
 
 import ffmpeg
 
-from utils.audio_extractor import AudioExtractor, ConcurrentAudioExtractor, MediaProcessor
+from objects.audio_extractor import AudioExtractor, ConcurrentAudioExtractor, MediaProcessor
 
 # Set up logging for debugging
 logging.basicConfig(

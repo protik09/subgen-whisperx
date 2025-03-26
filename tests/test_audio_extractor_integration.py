@@ -14,7 +14,7 @@ import tempfile
 import unittest
 from typing import List, Tuple
 
-from utils.audio_extractor import AudioExtractor, ConcurrentAudioExtractor, MediaProcessor
+from objects.audio_extractor import AudioExtractor, ConcurrentAudioExtractor, MediaProcessor
 
 
 class TestAudioExtractorIntegration(unittest.TestCase):
