@@ -1,16 +1,53 @@
 import os
 import logging
 import concurrent.futures
-from typing import List, Set
+from typing import List, Set, Tuple
 from pathlib import Path
 
 import ffmpeg
 
-from objects.options import Options
+from objects.args import Options
 from objects.mediafile import MediaFile
 from utils.exceptions import MediaNotFoundError
 from utils.constants import MEDIA_EXTENSIONS
 
+
+# Function to check if media file is valid
+def is_media_file(file_path: str) -> Tuple[bool, bool]:
+    """Check if a file is a valid media file.
+
+    Args:
+        file_path (str): Path to the file to check
+
+    Returns:
+        Tuple[bool, bool]: Tuple containing (is_valid_media, is_audio_only)
+    """
+    logger = logging.getLogger("subgen_whisperx.is_media_file")
+    _valid_media_flag: bool = False
+    _valid_audio_flag: bool = False
+    try:
+        # This weird thing exists because ffmpeg.probe() shows a text file as a valid video file
+        probe = (
+            ffmpeg.probe(file_path)
+            if os.path.split(file_path)[1].split(".")[-1] != "txt"
+            else None
+        )
+        # Ensure probe is not None before proceeding
+        if probe and len(probe["streams"]) > 0:
+            stream_type: str = probe["streams"][0]["codec_type"]
+            if stream_type == "audio" or stream_type == "video":
+                _valid_media_flag = True
+                if stream_type == "audio":
+                    _valid_audio_flag = True
+        logger.debug(
+            f"File: {file_path}, Valid Media: {_valid_media_flag}, Audio Only: {_valid_audio_flag}"
+        )
+    except Exception as e:
+        _valid_audio_flag = False
+        _valid_media_flag = False
+        logger.error(f"An error occurred while probing the file: {e}")
+    finally:
+        return _valid_media_flag, _valid_audio_flag
 
 class Media:
     """
@@ -29,7 +66,8 @@ class Media:
         self._media_files: List[MediaFile] = []
         self._extracted_audio_paths: List[tuple[str, str, bool]] = []
 
-    def discover_media_files(self) -> List[MediaFile]:
+    # @staticmethod
+    def get_media_files(self) -> List[MediaFile]:
         """
         Discover media files based on the options provided.
 
