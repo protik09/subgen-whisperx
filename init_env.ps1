@@ -2,25 +2,32 @@
 
 # Check if uv is installed
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-    Write-Host "uv could not be found"
+    Write-Warning "uv could not be found. Installing ..."
     # Install uv
     powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 }
 
+# Check if ffmpeg is installed
+if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+    Write-Warning "ffmpeg could not be found"
+    # Install ffmpeg
+    powershell -ExecutionPolicy ByPass -c "winget install --id Gyan.FFmpeg"
+}
+
 # Check if venv exists
 if (-not (Test-Path ".venv")) {
-    Write-Host "Creating virtual environment..."
+    Write-Information "Creating virtual environment..."
     uv venv
 }
 
 if (-not (Test-Path ".venv\Scripts\activate")) {
-    Write-Host "Virtual environment activation script not found, recreating..."
+    Write-Warning "Virtual environment activation script not found, recreating..."
     uv venv
 }
 
 # Activate venv
 if (Test-Path ".venv\Scripts\activate") {
-    Write-Host "Activating virtual environment..."
+    Write-Information "Activating virtual environment..."
     .venv\Scripts\activate
 }
 
