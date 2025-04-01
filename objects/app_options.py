@@ -131,8 +131,8 @@ def parse_arguments() -> AppOptions:
     logger.setLevel(options.log_level)
 
     # Sanitize and validate all inputs
-    options.file = sanitize.sanitize_path(args.file)
-    options.directory = sanitize.sanitize_path(args.directory)
+    options.file = args.file
+    options.directory = args.directory
     options.txt = sanitize.sanitize_path(args.txt)
     options.compute_device = (
         args.compute_device if args.compute_device else _get_device(options)
