@@ -4,6 +4,7 @@ import argparse
 import logging
 from dataclasses import dataclass
 from typing import Optional
+from pathlib import Path
 
 import utils.sanitize as sanitize
 from utils.exceptions import (
@@ -23,15 +24,19 @@ MIN_THREADS = 1
 class AppOptions:
     """Configuration options for the subtitle generator."""
 
-    file: Optional[str] = None
-    directory: Optional[str] = None
-    compute_device: Optional[str] = None
+    input_file: Optional[str] = None
+    input_directory: Optional[str] = None
+    input_language: Optional[list[str]] = None
+    output_directory: Optional[Path]
+    valid_input_file_paths: list[str]
+    compute_device: Optional[str] = None    # "cpu", "cuda"
     model_size: Optional[str] = None
     log_level: str = "INFO"
-    language: Optional[str] = None
-    num_threads: Optional[int] = None
-    txt: Optional[str] = None
-    print_progress_flag: bool = False
+    num_threads: Optional[int] = None       # Max threads to use
+    print_progress_flag: bool = False       # Flag for WhisperX progress bar
+    txt: Optional[str] = None               # Txt file containing file paths to media files
+    cli_flag: Optional[bool] = False
+    merge_sub_to_file: Optional[bool] = None
 
     def __str__(self):
         """
@@ -43,10 +48,11 @@ class AppOptions:
         """
         # Normalize paths for consistent representation
         file_path = os.path.normpath(str(self.file)) if self.file else None
-        dir_path = os.path.normpath(str(self.directory)) if self.directory else None
+        in_dir_path = os.path.normpath(str(self.input_directory)) if self.directory else None
+        out_dir_path = os.path.normpath(str(self.output_directory)) if self.output_directory else None
         txt_path = os.path.normpath(str(self.txt)) if self.txt else None
 
-        args_str: str = f"""File: {file_path} | Directory: {dir_path} | Compute Device: {self.compute_device} | Model Selected: {self.model_size} | Log Level: {self.log_level} | Media Language: {self.language} | Number of Threads: {self.num_threads} | Input Media Paths File: {txt_path}"""
+        args_str: str = f"""Input File: {file_path} | Input Directory: {in_dir_path} | Output Directory: {out_dir_path} | Compute Device: {self.compute_device} | Model Selected: {self.model_size} | Log Level: {self.log_level} | Media Language: {self.language} | Number of Threads: {self.num_threads} | Input Media Paths File: {txt_path} | Print Progress Flag: {self.print_progress_flag} | CLI Flag: {self.cli_flag} | Merge Subtitles to File: {self.merge_sub_to_file}"""
         return args_str
 
 
