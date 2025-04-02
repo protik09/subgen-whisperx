@@ -15,17 +15,17 @@ class MediaFile:
         is_audio (bool): Whether the file contains only audio
     """
 
-    path: Path
-    is_audio: bool
-    extracted_audio_path: Path
-    input_srt_path: Path
     status: Enum
+    path: Path
+    input_srt_path: Path = None
+    extracted_audio_path: Path
+    is_audio: bool
+    successfully_extracted_audio: bool = False
     lang_audio: str
     lang_sub: str
-    raw_transcript: Optional[Dict]
+    raw_transcript: Optional[Dict] = None  # Cache for raw whisperx output or loaded SRT data
     aligned_segments: Optional[List[Dict]]
-    post_process_segments: Optional[List[Dict]]
-    successfully_extracted_audio: bool = False
+    post_process_segments: Optional[List[Dict]] # Final segments
 
     def __str__(self) -> str:
         # Should give output: video_to_be_subtitled.mp4 (video)
